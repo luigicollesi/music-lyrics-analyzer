@@ -16,10 +16,11 @@ def test_noisy_example_preserves_known_lyrics():
     heard = transcript("Hoje momo cagal para não comer suafoz")
     result = align_transcript_words(reference, heard)
     assert [r["status"] for r in result] == [
-        "exact", "contextual", "contextual", "exact", "exact", "exact", "unresolved"]
+        "exact", "contextual", "contextual", "exact", "exact", "exact", "contextual-edge"]
     assert result[1]["start"] == .4
     assert result[2]["text"] == "mingal"
-    assert result[-1]["start"] is None
+    assert result[-1]["start"] == 2.4
+    assert result[-1]["status"] == "contextual-edge"
 
 
 def test_no_invented_timing_when_asr_omits_word():
