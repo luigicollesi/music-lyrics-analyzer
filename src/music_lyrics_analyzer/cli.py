@@ -113,7 +113,8 @@ def analyze(args):
                 section_timings=manual_sections,asr_segments=asr_segments,
                 chunk_seconds=args.asr_chunk_seconds,
                 max_window_seconds=args.max_section_seconds,
-                recovery=args.recovery=='auto')
+                recovery=args.recovery=='auto',
+                max_local_seconds=args.max_local_seconds)
             if cache_file and asr_segments is None and diagnostic['asr_segments']:
                 cache_file.parent.mkdir(parents=True,exist_ok=True)
                 cache_file.write_text(json.dumps(diagnostic['asr_segments'],
@@ -180,6 +181,7 @@ def main(argv=None):
                    help='Localização hierárquica (padrão) ou alinhamento global anterior.')
     p.add_argument('--asr-chunk-seconds',type=float,default=30.,help='Janela do reconhecimento auxiliar em segundos.')
     p.add_argument('--max-section-seconds',type=float,default=100.,help='Duração máxima da janela de alinhamento de uma seção.')
+    p.add_argument('--max-local-seconds',type=float,default=35.,help='Duração máxima dos subtrechos de alinhamento.')
     p.add_argument('--recovery',choices=['auto','none'],default='auto')
     p.add_argument('--section-timings',help='JSON opcional de intervalos de seções verificados manualmente.')
     p.add_argument('--asr-segments',help='JSON opcional de reconhecimento auxiliar para testes.')
