@@ -214,6 +214,13 @@ def hierarchical_align(model, audio16, words, lines, *, language='pt',
                         errors.append({'section_id':s['id'],
                             'code':'WORD_ASR_RECOVERY_ERROR',
                             'message':str(exc)[:300]})
+            # Recover lines omitted by the original bounded line-group selection.
+            # Neighboring timed words across groups bound these section-level gaps.
+            if recovery and any(w['start'] is None for w in region_words):
+                section_retry = retry_unresolved_gaps(
+                    model, audio16, region_words, start, end, language)
+                attempts.append({'section_id':s['id'],
+                                 'section_acoustic_gap_recovery':section_retry})
             # Check that separately processed line groups also agree with each
             # other in the section's absolute time coordinate.
             cross_problems=validate_word_timeline(region_words)
