@@ -11,7 +11,7 @@ def test_end_to_end_manual_timestamps(tmp_path):
     data=(np.sin(2*np.pi*220*np.arange(sr*2)/sr)*.3*32767).astype('<i2')
     with wave.open(str(audio),'wb') as w:
         w.setnchannels(1);w.setsampwidth(2);w.setframerate(sr);w.writeframes(data.tobytes())
-    lyrics=tmp_path/'lyrics.txt';lyrics.write_text('[Verse]\nOlá mundo',encoding='utf-8')
+    lyrics=tmp_path/'lyrics.md';lyrics.write_text('# Inferno — Divina Comédia\n\n**Nota não cantada.**\n\n## Verse 1\nOlá mundo',encoding='utf-8')
     timings=tmp_path/'manual.json';timings.write_text(json.dumps([
       {'text':'Olá','start':.2,'end':.7},{'text':'mundo','start':.8,'end':1.5}]),encoding='utf-8')
     output=tmp_path/'result.json'
