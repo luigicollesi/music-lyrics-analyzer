@@ -150,10 +150,20 @@ def analyze(args):
              for sec in sections}
     for sec in sections:
         sec.update(quality[sec['id']])
+    coverage_counts = {
+        'total': len(words),
+        'timed': sum(w['start'] is not None for w in words),
+        'tentative': sum(w['start'] is not None and
+                         w['alignment']['status']=='tentative' for w in words),
+        'unresolved': sum(w['start'] is None for w in words),
+    }
+    coverage_counts['non_tentative'] = (
+        coverage_counts['timed'] - coverage_counts['tentative'])
     result={'schema_version':2 if args.prosody=='pyin' else 1,
             'audio':{'path':str(music),'duration_seconds':round(duration,3),
                      'sample_rate':sr,'sha256':file_hash(music)},
             'rhythm':rhythm,'sections':sections,'lines':lines,'words':words,
+            'coverage':coverage_counts,
             'analysis':{'aligner':method,'separator':args.separator,'language':args.language,
                         'strength_definition':'relative_acoustic_proxy','strength_source':source,
                         'strategy':args.strategy,
@@ -172,7 +182,11 @@ def analyze(args):
             'sections':sections,'diagnostics':result['diagnostics'],'warnings':warnings},
             ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
         print(f'Relatório: {report}',file=sys.stderr)
-    print(f'Arquivo: {output}\nBPM: {rhythm["bpm"]}\nAlinhadas: {sum(w["start"] is not None for w in words)}/{len(words)}')
+    print(f'Arquivo: {output}\\nBPM: {rhythm["bpm"]}\\n'
+          f'Com horários: {coverage_counts["timed"]}/{coverage_counts["total"]}; '
+          f'não-contextuais: {coverage_counts["non_tentative"]}; '
+          f'contextuais tentativas: {coverage_counts["tentative"]}; '
+          f'sem horário: {coverage_counts["unresolved"]}')
     print('\nSeções identificadas (tempos baseados nas palavras alinhadas):')
     for sec in sections:
         clock=(f'{sec["start"]:.2f}s–{sec["end"]:.2f}s'

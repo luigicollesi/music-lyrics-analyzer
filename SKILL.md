@@ -66,3 +66,9 @@ Never fabricate missing word timings or confidence. Treat low-confidence/unresol
 ## Output contract
 
 `analysis/lyrics-analysis.json` is the canonical machine-readable output; optional `.lrc` is only an aid for subtitles. For music-video work, pass JSON to `music-video-director` as timing evidence, not as a substitute for visual review.
+## Contextual word recovery (V0.4 candidate)
+
+In hierarchical mode, `--recovery auto` performs a second word-timestamp ASR pass only on bounded local groups with unresolved lyric occurrences. The reference lyrics determine the actual text. Exact/fuzzy transcript anchors are linked monotonically, then a limited number of one-to-one substitutions between reliable anchors may be recovered. A single trailing or leading substitution can be inferred only with two adjacent anchors and some textual similarity.
+
+The output distinguishes `word-asr-exact`, `word-asr-fuzzy`, `word-asr-contextual`, and `word-asr-contextual-edge` in `words[].alignment.method`. Contextual matches have `alignment.status=tentative` and confidence null; do not treat them as acoustic proof of speech or frame-accurate timestamps. Missing ASR words stay unresolved. `--recovery none` switches this pass off. Check `diagnostics.attempts[].word_asr_recovery` and validate results against real audio before using them for VFX.
+
