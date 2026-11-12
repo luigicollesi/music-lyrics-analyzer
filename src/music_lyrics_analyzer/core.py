@@ -8,8 +8,8 @@ import re
 import unicodedata
 import numpy as np
 
-TOKEN=re.compile(r"[^\\W_]+(?:['’\\-][^\\W_]+)*",re.UNICODE)
-HEADING=re.compile(r"^\\s*\\[([^\\]]+)\\]\\s*$")
+TOKEN=re.compile(r"[^\W_]+(?:['’\-][^\W_]+)*",re.UNICODE)
+HEADING=re.compile(r"^\s*\[([^\]]+)\]\s*$")
 
 def parse_lyrics(text: str):
     words,lines=[],[]
@@ -122,4 +122,4 @@ def lrc_lines(words):
         if w['start'] is None:continue
         t=float(w['start']);m=int(t//60)
         out.append(f'[{m:02d}:{t-m*60:05.2f}]{w["text"]}')
-    return '\\n'.join(out)+'\\n'
+    return '\n'.join(out)+'\n'
