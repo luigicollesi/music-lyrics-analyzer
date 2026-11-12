@@ -180,7 +180,7 @@ def main(argv=None):
     p.add_argument('--strategy',choices=['hierarchical','legacy'],default='hierarchical',
                    help='Localização hierárquica (padrão) ou alinhamento global anterior.')
     p.add_argument('--asr-chunk-seconds',type=float,default=30.,help='Janela do reconhecimento auxiliar em segundos.')
-    p.add_argument('--max-section-seconds',type=float,default=100.,help='Duração máxima da janela de alinhamento de uma seção.')
+    p.add_argument('--max-section-seconds',type=float,default=150.,help='Duração máxima da janela de alinhamento de uma seção.')
     p.add_argument('--max-local-seconds',type=float,default=35.,help='Duração máxima dos subtrechos de alinhamento.')
     p.add_argument('--recovery',choices=['auto','none'],default='auto')
     p.add_argument('--section-timings',help='JSON opcional de intervalos de seções verificados manualmente.')
