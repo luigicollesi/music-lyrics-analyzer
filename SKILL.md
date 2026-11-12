@@ -32,6 +32,17 @@ python analise.py --music-path "audio/Inferno.wav" --lyrics-path "lyrics/Inferno
 
 Read `sections[]` in the output JSON first. Each section has a distinct `id`, `type`, `label`, `detail`, `line_ids`, `word_ids`, estimated `start`/`end` (or null), and aligned/total word counts. Use `section_id` on lines and words to recover verse/chorus context without guessing based on the wording. The CLI prints musical sections and their aligned time ranges for inspection. Do not treat section headers or author notes as vocals. Timing still requires valid audio alignment.
 
+## Hierarchical alignment (V0.2)
+
+By default, `python analise.py` executes a hierarchical workflow: transcribe overlapping audio windows to find distinctive section anchors, choose monotonic occurrences of repeated choruses, and force-align shorter section/phrase windows with stable-ts. The lyrics Markdown remains authoritative; ASR is only an auxiliary locator. Never infer exact times from BPM or line position.
+
+```bash
+python analise.py --music-path "song.wav" --lyrics-path "lyrics.md" --language pt --model base --device cpu --strategy hierarchical --resume --report --lrc
+```
+
+Use `--strategy legacy` for the previous global alignment baseline; `--asr-segments` for supplied recognizer segments; `--section-timings` for manually verified section windows; and `--vocals-path` for a pre-separated vocal file preserving the original timeline. `--max-local-seconds` constrains local alignment to avoid long drifting ranges. `--resume` caches the ASR output. None of these flags guarantee correct singing alignment.
+
+Read `diagnostics.sections[]` (coverage, anchor confidence, status), `diagnostics.errors[]` and `sections[].coverage` before deciding when to display lyrics in the video. A section may remain unresolved; do not fill its time by interpolating neighboring sections. Outputs require listening verification before frame-accurate production.
 ## Read the result
 
 Use `rhythm.bpm`, `rhythm.beats`, `words[].start`, `words[].end`, `words[].strength`, `words[].alignment.status`, and `warnings`. Each word has a unique ID, including repetitions. `strength` is a *track-relative acoustic proxy*, not emotion or objective vocal force. When `analysis.strength_source` is `mixture`, instrument levels can bias it.
