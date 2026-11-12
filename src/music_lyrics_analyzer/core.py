@@ -108,7 +108,7 @@ def collect_sections(lines,words):
         section['line_ids'].append(line['id'])
         section['word_ids'].extend(line['word_ids'])
     for section in sections:
-        values=[by_id[wid] for wid in section['word_ids']]
+        values=[by_id[wid] for wid in section['word_ids']
                 if by_id[wid]['start'] is not None]
         section['total_words']=len(section['word_ids'])
         section['aligned_words']=len(values)
