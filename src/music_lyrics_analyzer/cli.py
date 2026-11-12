@@ -6,7 +6,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from .core import parse_lyrics,apply_alignment,beat_analysis,strength_analysis,file_hash,lrc_lines
+from .core import parse_lyrics,collect_sections,apply_alignment,beat_analysis,strength_analysis,file_hash,lrc_lines
 
 def read_audio(path: Path,sr=22050):
     import numpy as np
@@ -49,6 +49,11 @@ def analyze(args):
     if not lyrics_file.is_file():raise FileNotFoundError('Letra inexistente: '+str(lyrics_file))
     lyric_text=lyrics_file.read_text(encoding='utf-8-sig')
     words,lines=parse_lyrics(lyric_text)
+    sections=collect_sections(lines,words)
+    print(f'Letra: {len(sections)} seções, {len(lines)} linhas, {len(words)} palavras',file=sys.stderr)
+    for index,section in enumerate(sections,1):
+        print(f'  {index:02d}. [{section["type"]}] {section["label"]}: {section["total_words"]} palavras',file=sys.stderr)
+    aligned_lyrics='\n'.join(line['text'] for line in lines)
     output=Path(args.output).expanduser().resolve()
     output.parent.mkdir(parents=True,exist_ok=True)
     y,sr=read_audio(music);duration=len(y)/sr
@@ -68,7 +73,7 @@ def analyze(args):
             candidates=data;method='manual'
         elif args.aligner=='stable-ts':
             print('3/4 Alinhando letra com stable-ts...',file=sys.stderr)
-            candidates=stable_ts_align(vocal_audio,lyric_text,args.language,args.model,args.device)
+            candidates=stable_ts_align(vocal_audio,aligned_lyrics,args.language,args.model,args.device)
             method='stable-ts'
         else:
             candidates=[];method='none'
@@ -77,23 +82,30 @@ def analyze(args):
         print('4/4 Medindo intensidade acústica...',file=sys.stderr)
         voice,_=read_audio(vocal_audio,sr) if source=='vocals' else (y,sr)
         warnings+=strength_analysis(voice,sr,words,source=source)
+    sections=collect_sections(lines,words)
     result={'schema_version':1,
             'audio':{'path':str(music),'duration_seconds':round(duration,3),
                      'sample_rate':sr,'sha256':file_hash(music)},
-            'rhythm':rhythm,'lines':lines,'words':words,
+            'rhythm':rhythm,'sections':sections,'lines':lines,'words':words,
             'analysis':{'aligner':method,'separator':args.separator,'language':args.language,
                         'strength_definition':'relative_acoustic_proxy','strength_source':source},
             'warnings':warnings}
     output.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     if args.lrc:output.with_suffix('.lrc').write_text(lrc_lines(words),encoding='utf-8')
     print(f'Arquivo: {output}\nBPM: {rhythm["bpm"]}\nAlinhadas: {sum(w["start"] is not None for w in words)}/{len(words)}')
+    print('\nSeções identificadas (tempos baseados nas palavras alinhadas):')
+    for sec in sections:
+        clock=(f'{sec["start"]:.2f}s–{sec["end"]:.2f}s'
+               if sec['start'] is not None else 'tempo não identificado')
+        print(f'  [{sec["type"]}] {sec["label"]}: {clock} '
+              f'({sec["aligned_words"]}/{sec["total_words"]} palavras)')
     for warning in warnings:print('AVISO:',warning,file=sys.stderr)
     return 0
 
 def main(argv=None):
     p=argparse.ArgumentParser(prog='python analise.py',description='Analisa BPM, palavras cantadas e força acústica relativa.')
     p.add_argument('--music-path',required=True,help='Caminho para música WAV, MP3, FLAC, etc.')
-    p.add_argument('--lyrics-path',required=True,help='Caminho para letra em UTF-8.')
+    p.add_argument('--lyrics-path',required=True,help='Caminho para letra em Markdown (.md) ou texto simples (.txt), UTF-8.')
     p.add_argument('--output',default='analysis/lyrics-analysis.json',help='Arquivo de saída JSON.')
     p.add_argument('--language',default='pt',help='Idioma da letra (padrão: pt).')
     p.add_argument('--aligner',choices=['stable-ts','none'],default='stable-ts')

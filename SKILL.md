@@ -20,6 +20,18 @@ python analise.py --music-path "path/to/song.wav" --lyrics-path "path/to/lyrics.
 
 For testing without inference: use `--aligner none` (word timestamps stay null) or `--word-timings manually-verified.json` (the input timestamps must be real and in chronological order).
 
+## Markdown lyrics and song structure
+
+Prefer a UTF-8 `.md` lyrics document with an optional `# Song title`, author annotations before the song, and labeled musical sections such as `## Chorus (abertura)`, `## Verse 1`, `## Bridge`, and `## Final Chorus`. Labels and introductory metadata are never sung.
+
+Example:
+
+```bash
+python analise.py --music-path "audio/Inferno.wav" --lyrics-path "lyrics/Inferno.md" --language pt --model base --device cpu --lrc
+```
+
+Read `sections[]` in the output JSON first. Each section has a distinct `id`, `type`, `label`, `detail`, `line_ids`, `word_ids`, estimated `start`/`end` (or null), and aligned/total word counts. Use `section_id` on lines and words to recover verse/chorus context without guessing based on the wording. The CLI prints musical sections and their aligned time ranges for inspection. Do not treat section headers or author notes as vocals. Timing still requires valid audio alignment.
+
 ## Read the result
 
 Use `rhythm.bpm`, `rhythm.beats`, `words[].start`, `words[].end`, `words[].strength`, `words[].alignment.status`, and `warnings`. Each word has a unique ID, including repetitions. `strength` is a *track-relative acoustic proxy*, not emotion or objective vocal force. When `analysis.strength_source` is `mixture`, instrument levels can bias it.

@@ -29,6 +29,56 @@ python -m pip install -e ".[align,test]"
 
 Instale o FFmpeg pelo gerenciador de pacotes do sistema e confirme `ffmpeg -version`.
 
+## Letras em Markdown (.md) e seções da música
+
+A entrada recomendada é um arquivo **Markdown (.md)** com título opcional, observações do autor e seções em títulos de segundo nível (`##`). O analisador distingue *Chorus*, *Verse*, *Final Chorus*, *Bridge*, *Intro*, *Outro*, *Instrumental* e outros nomes comuns. Descrições entre parênteses são preservadas, e cada ocorrência de refrão recebe um ID diferente.
+
+```markdown
+# Inferno — Divina Comédia
+
+**Letra definitiva fornecida pelo autor.** Essa nota não é cantada.
+
+## Chorus (abertura)
+
+Foi só uma vez, só uma vez,
+Eu disse isso da última vez.
+
+## Verse 1
+
+Espinhos rasgam minha pele, mal consigo enxergar.
+
+## Chorus (após Verse 1)
+
+Foi só uma vez, só uma vez,
+
+## Final Chorus
+
+Foi mais de uma vez, mais de uma vez.
+```
+
+Executar:
+
+```bash
+python analise.py --music-path "audio/Inferno.wav" --lyrics-path "lyrics/Inferno.md" --language pt --model base --device cpu --lrc
+```
+
+O terminal lista as seções antes da inferência e, ao terminar, apresenta cada seção com sua categoria, início e fim estimados e quantidade de palavras alinhadas. Exemplo meramente ilustrativo:
+
+```text
+Letra: 4 seções, 6 linhas, 40 palavras
+  01. [chorus] Chorus (abertura): ...
+  02. [verse] Verse 1: ...
+  03. [chorus] Chorus (após Verse 1): ...
+  04. [final-chorus] Final Chorus: ...
+
+Seções identificadas (tempos baseados nas palavras alinhadas):
+  [chorus] Chorus (abertura): 00.00s–12.40s (...)
+```
+
+**Observação:** no JSON os objetos `sections[]`, `lines[]` e `words[]` são ligados por `section_id`; `sections[].type` indica a categoria e `sections[].detail` preserva o contexto como `abertura` ou `após Verse 1`. Os tempos da seção são derivados das palavras efetivamente alinhadas; se nenhuma palavra for alinhada, os tempos ficam `null`.
+
+As linhas de título (`# ...`), etiquetas de seção (`## ...`) e anotações antes do primeiro verso não são enviadas para o modelo e não contam como palavras cantadas. O formato antigo com `[Chorus]` e `[Verse]` continua aceito, assim como letras simples em `.txt`. Em Markdown, coloque versos apenas sob títulos de seção reconhecidos; blocos sob títulos como `## Instruções` serão ignorados.
+
 ## Análise automática
 
 ```bash
