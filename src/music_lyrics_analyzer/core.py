@@ -37,6 +37,7 @@ def parse_lyrics(text: str):
     current=None
     markdown=False
     blocked=False
+    section_count=0
     for raw in text.splitlines():
         raw=raw.strip()
         head=MARKDOWN_HEADING.match(raw)
@@ -61,7 +62,8 @@ def parse_lyrics(text: str):
             parsed=None
         if parsed is not None:
             kind,detail=parsed
-            section_id=f'section_{sum(1 for item in lines if item.get("section_first"))+1:04d}'
+            section_count+=1
+            section_id=f'section_{section_count:04d}'
             current={'id':section_id,'label':label,'type':kind,'detail':detail,
                      'first':True}
             blocked=False
@@ -73,12 +75,13 @@ def parse_lyrics(text: str):
         tokens=TOKEN.findall(raw)
         if not tokens: continue
         if current is None:
-            current={'id':'section_0001','label':'Unlabeled','type':'unknown',
+            section_count+=1
+            current={'id':f'section_{section_count:04d}','label':'Unlabeled','type':'unknown',
                      'detail':None,'first':True}
         lid=f'line_{len(lines)+1:04d}'
         lines.append({'id':lid,'section':current['label'],
                       'section_id':current['id'],'section_type':current['type'],
-                      'section_first':current['first'],'text':raw,'word_ids':[]})
+                      'section_detail':current['detail'],'section_first':current['first'],'text':raw,'word_ids':[]})
         current['first']=False
         for token in tokens:
             wid=f'w{len(words)+1:05d}'
@@ -98,7 +101,7 @@ def collect_sections(lines,words):
     for line in lines:
         if not sections or sections[-1]['id']!=line['section_id']:
             sections.append({'id':line['section_id'],'label':line['section'],
-                             'type':line['section_type'],'line_ids':[],
+                             'type':line['section_type'],'detail':line['section_detail'],'line_ids':[],
                              'word_ids':[],'start':None,'end':None,
                              'aligned_words':0,'total_words':0})
         section=sections[-1]
