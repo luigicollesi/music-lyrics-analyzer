@@ -25,3 +25,9 @@ def test_end_to_end_manual_timestamps(tmp_path):
     assert [w['start'] for w in result['words']]==[.2,.8]
     assert result['words'][0]['strength'] is not None
     assert output.with_suffix('.lrc').exists()
+    assert result['sections'][0]['label']=='Verse 1'
+    assert result['sections'][0]['type']=='verse'
+    assert result['sections'][0]['start']==.2
+    assert result['sections'][0]['end']==1.5
+    assert '[verse] Verse 1' in p.stdout
+    assert result['words'][0]['section_id']==result['sections'][0]['id']
