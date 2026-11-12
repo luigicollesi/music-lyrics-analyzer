@@ -79,6 +79,31 @@ Seções identificadas (tempos baseados nas palavras alinhadas):
 
 As linhas de título (`# ...`), etiquetas de seção (`## ...`) e anotações antes do primeiro verso não são enviadas para o modelo e não contam como palavras cantadas. O formato antigo com `[Chorus]` e `[Verse]` continua aceito, assim como letras simples em `.txt`. Em Markdown, coloque versos apenas sob títulos de seção reconhecidos; blocos sob títulos como `## Instruções` serão ignorados.
 
+## V0.2: alinhamento hierárquico de canções
+
+A estratégia padrão agora é **hierarchical**: reconhecimento auxiliar em janelas de 30 segundos, seleção monotônica de âncoras para identificar refrões repetidos e alinhamento de cada seção em sua própria região. Se não houver âncora, nenhuma palavra da seção recebe horário inventado.
+
+```bash
+python analise.py --music-path "audio/Inferno.wav" --lyrics-path "lyrics/Inferno.md" \
+  --strategy hierarchical --language pt --device cpu --model base --resume --report --lrc
+```
+
+**Comparação:** `--strategy legacy` mantém o alinhamento global da V0.1.
+
+**Teste com reconhecimento externo:** `--asr-segments recognized.json` recebe uma lista de segmentos `[{"text":"...", "start":12.0, "end":15.0}]` realmente observados.
+
+**Âncoras verificadas manualmente:** `--section-timings sections.json` pode conter:
+
+```json
+{"section_0001":[12.0,23.5],"section_0002":[23.5,78.5]}
+```
+
+Cada intervalo delimita uma seção, sem deslocar os offsets do áudio original. Se uma seção não estiver fornecida, continuará pendente. Para usar um vocal já separado com a mesma linha de tempo do master, passe `--vocals-path audio/vocals.wav`.
+
+**Cache:** `--resume` grava o reconhecimento auxiliar na pasta `analysis/.cache`, indexado por hash do vocal, idioma, modelo e tamanho das janelas. `--report` escreve `analysis/lyrics-analysis-report.json` com cobertura, âncoras e erros de consistência.
+
+**Limitações:** a localização automática depende da qualidade do ASR no canto; uma frase não reconhecida pode permanecer sem horário. O valor de intensidade é um proxy acústico relativo, não emoção. A estratégia nova precisa de validação manual em áudio real; não existe ainda fallback WhisperX nem medição de precisão para a música completa.
+
 ## Análise automática
 
 ```bash
