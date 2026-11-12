@@ -70,11 +70,13 @@ def choose_monotonic_anchors(sections, candidates, *, min_gap=.25):
     for section in sections:
         next_states=[]
         opts=candidates.get(section['id'], [])
-        for score,path,last_end in states:
-            next_states.append((score-.31, path+[None], last_end))
+        for score,path,last_start in states:
+            next_states.append((score-.31, path+[None], last_start))
             for c in opts:
-                if c['start'] < last_end + min_gap: continue
-                next_states.append((score + c['score']-.25, path+[c], c['end']))
+                # Adjacent ASR segments often touch exactly at their boundaries.
+                # Preserve strictly increasing START times, not non-overlapping ENDS.
+                if c['start'] <= last_start + min_gap: continue
+                next_states.append((score + c['score']-.25, path+[c], c['start']))
         next_states.sort(key=lambda x:x[0],reverse=True)
         # Beam is enough for short songs; keep different last_end anchors.
         kept=[];seen=set()
