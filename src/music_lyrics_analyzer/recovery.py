@@ -77,7 +77,7 @@ def recover_with_word_asr(model, audio16, words, start, end, language,
         word.update(start=round(a, 3), end=round(b, 3),
                     duration=round(b - a, 3))
         word["alignment"] = {
-            "status": "tentative" if status == "contextual" else "aligned",
+            "status": "tentative" if status.startswith("contextual") else "aligned",
             "confidence": None,
             "method": "word-asr-" + status,
         }
