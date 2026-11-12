@@ -1,3 +1,9 @@
+### Recuperação acústica de lacunas (V0.4 candidata)
+
+Antes da segunda passagem de ASR, o pipeline agora tenta reexecutar `model.align` apenas nas sequências de palavras ainda sem horário. Os limites do recorte são obtidos da palavra já alinhada anterior e posterior, ou da janela local já localizada. Não se geram tempos por interpolação. Lacunas maiores que 12 segundos ou com mais de 18 palavras permanecem pendentes desta etapa. O resultado registra `diagnostics.attempts[].acoustic_gap_recovery`.
+
+O JSON também inclui `coverage.timed`, `coverage.non_tentative`, `coverage.tentative` e `coverage.unresolved`. O número de palavras com horário, por si só, não mede a precisão dos tempos ou a certeza de que a palavra foi cantada.
+
 ## V0.4 (candidata): recuperação contextual de palavras
 
 Com `--strategy hierarchical --recovery auto` (padrão), as palavras que permanecerem sem timestamps após o alinhamento forçado são novamente investigadas em janelas curtas. O sistema solicita timestamps **por palavra** ao ASR e compara a transcrição ruidosa com a **letra original** por ordem de ocorrência, similaridade de caracteres e âncoras exatas.
