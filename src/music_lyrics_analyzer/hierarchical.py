@@ -194,6 +194,10 @@ def hierarchical_align(model, audio16, words, lines, *, language='pt',
                     'window':[gs,ge],'proposed_words':len(proposed),
                     'warnings':warnings[:8],'problems':problems[:16]})
                 errors.extend({'section_id':s['id'],**p} for p in problems)
+            # Check that separately processed line groups also agree with each
+            # other in the section's absolute time coordinate.
+            cross_problems=validate_word_timeline(region_words)
+            errors.extend({'section_id':s['id'],**p} for p in cross_problems)
             coverage=sum(w['start'] is not None for w in region_words)/max(1,len(region_words))
             if recovery and coverage<.75 and asr_segments is not None:
                 restored=_attempt_recovery(model,audio16,region_words,region_lines,
