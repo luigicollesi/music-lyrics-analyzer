@@ -53,7 +53,7 @@ def analyze(args):
     print(f'Letra: {len(sections)} seções, {len(lines)} linhas, {len(words)} palavras',file=sys.stderr)
     for index,section in enumerate(sections,1):
         print(f'  {index:02d}. [{section["type"]}] {section["label"]}: {section["total_words"]} palavras',file=sys.stderr)
-    aligned_lyrics='\\n'.join(line['text'] for line in lines)
+    aligned_lyrics='\n'.join(line['text'] for line in lines)
     output=Path(args.output).expanduser().resolve()
     output.parent.mkdir(parents=True,exist_ok=True)
     y,sr=read_audio(music);duration=len(y)/sr
@@ -93,7 +93,7 @@ def analyze(args):
     output.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     if args.lrc:output.with_suffix('.lrc').write_text(lrc_lines(words),encoding='utf-8')
     print(f'Arquivo: {output}\nBPM: {rhythm["bpm"]}\nAlinhadas: {sum(w["start"] is not None for w in words)}/{len(words)}')
-    print('\\nSeções identificadas (tempos baseados nas palavras alinhadas):')
+    print('\nSeções identificadas (tempos baseados nas palavras alinhadas):')
     for sec in sections:
         clock=(f'{sec["start"]:.2f}s–{sec["end"]:.2f}s'
                if sec['start'] is not None else 'tempo não identificado')
