@@ -101,3 +101,18 @@ def test_no_audio_anchor_means_no_section_anchor():
     words,lines=parse_lyrics(LYRICS)
     asr=[{'text':'Apenas música instrumental sem voz','start':2,'end':4}]
     assert all(not v for v in find_anchor_candidates(lines,asr,threshold=.70).values())
+
+def test_long_section_uses_bounded_line_windows():
+    from music_lyrics_analyzer.hierarchical import _line_groups
+    words,lines=parse_lyrics(LYRICS)
+    verse=[line for line in lines if line['section']=='Verse 1']
+    groups=_line_groups(verse,ASR,9.0,75.0,max_local_seconds=35)
+    assert groups
+    assert all(0<end-start<=35 for _,start,end in groups)
+    assert all(line['section']=='Verse 1' for group,_,_ in groups for line in group)
+
+def test_unanchored_long_section_is_not_forced_to_end_of_song():
+    from music_lyrics_analyzer.hierarchical import _line_groups
+    _,lines=parse_lyrics(LYRICS)
+    verse=[line for line in lines if line['section']=='Verse 1']
+    assert _line_groups(verse,[],5,80,max_local_seconds=35)==[]
