@@ -9,28 +9,110 @@ import unicodedata
 import numpy as np
 
 TOKEN=re.compile(r"[^\W_]+(?:['’\-][^\W_]+)*",re.UNICODE)
-HEADING=re.compile(r"^\s*\[([^\]]+)\]\s*$")
+HEADING=re.compile(r"^\\s*\\[([^\\]]+)\\]\\s*$")
+MARKDOWN_HEADING=re.compile(r"^\\s*(#{1,6})\\s+(.+?)\\s*#*\\s*$")
+SECTION_PATTERN=re.compile(
+    r"^(?P<kind>final\\s+chorus|post[- ]?chorus|pre[- ]?chorus|"
+    r"chorus|refr[aã]o|verse|verso|bridge|ponte|intro|introduction|"
+    r"outro|ending|instrumental|interlude|interl[uú]dio|hook|"
+    r"prel[uú]dio|solo|break|coda)(?=\\s|\\d|\\(|$)", re.IGNORECASE)
+SECTION_TYPES={'refrão':'chorus','verso':'verse','ponte':'bridge',
+               'introduction':'intro','ending':'outro','interlúdio':'interlude','interludio':'interlude'}
+NON_LYRICAL=re.compile(r"^\\s*(?:\\*\\*.*\\*\\*|>.*|<!--.*-->|"
+                       r"[-*_]{3,}|\\|.*\\|)\\s*$")
+ 
+def section_info(label):
+    """Return normalized section type and optional parenthetical descriptor."""
+    cleaned=re.sub(r'\\s+', ' ', label.strip())
+    hit=SECTION_PATTERN.match(cleaned)
+    if not hit: return None
+    kind=hit.group('kind').casefold().replace(' ','-')
+    kind=SECTION_TYPES.get(kind,kind)
+    extra=re.search(r'\\(([^)]+)\\)\\s*$', cleaned)
+    return kind,extra.group(1).strip() if extra else None
 
 def parse_lyrics(text: str):
+    """Parse Markdown headings and old [Verse] tags without singing metadata."""
     words,lines=[],[]
-    section='unknown'
+    current=None
+    markdown=False
+    blocked=False
     for raw in text.splitlines():
-        heading=HEADING.match(raw)
-        if heading:
-            section=heading.group(1).strip()
+        raw=raw.strip()
+        head=MARKDOWN_HEADING.match(raw)
+        bracket=HEADING.match(raw)
+        if head:
+            markdown=True
+            depth=len(head.group(1))
+            label=head.group(2).strip()
+            parsed=section_info(label) if depth>=2 else None
+            if parsed is None:
+                current=None
+                blocked=True
+                continue
+        elif bracket:
+            label=bracket.group(1).strip()
+            parsed=section_info(label)
+            if parsed is None:
+                current=None
+                blocked=True
+                continue
+        else:
+            parsed=None
+        if parsed is not None:
+            kind,detail=parsed
+            section_id=f'section_{sum(1 for item in lines if item.get("section_first"))+1:04d}'
+            current={'id':section_id,'label':label,'type':kind,'detail':detail,
+                     'first':True}
+            blocked=False
+            continue
+        if not raw or NON_LYRICAL.match(raw) or raw.startswith('!['):
+            continue
+        if blocked or (markdown and current is None):
             continue
         tokens=TOKEN.findall(raw)
         if not tokens: continue
+        if current is None:
+            current={'id':'section_0001','label':'Unlabeled','type':'unknown',
+                     'detail':None,'first':True}
         lid=f'line_{len(lines)+1:04d}'
-        lines.append({'id':lid,'section':section,'text':raw.strip(),'word_ids':[]})
+        lines.append({'id':lid,'section':current['label'],
+                      'section_id':current['id'],'section_type':current['type'],
+                      'section_first':current['first'],'text':raw,'word_ids':[]})
+        current['first']=False
         for token in tokens:
             wid=f'w{len(words)+1:05d}'
-            words.append({'id':wid,'line_id':lid,'text':token,'start':None,
+            words.append({'id':wid,'line_id':lid,
+                          'section_id':current['id'],'section_type':current['type'],
+                          'text':token,'start':None,
                           'end':None,'duration':None,'strength':None,'features':None,
                           'alignment':{'status':'unresolved','confidence':None,'method':None}})
             lines[-1]['word_ids'].append(wid)
     if not words: raise ValueError('A letra não contém palavras utilizáveis.')
     return words,lines
+
+def collect_sections(lines,words):
+    """Build ordered, occurrence-specific sections and aligned time spans."""
+    by_id={w['id']:w for w in words}
+    sections=[]
+    for line in lines:
+        if not sections or sections[-1]['id']!=line['section_id']:
+            sections.append({'id':line['section_id'],'label':line['section'],
+                             'type':line['section_type'],'line_ids':[],
+                             'word_ids':[],'start':None,'end':None,
+                             'aligned_words':0,'total_words':0})
+        section=sections[-1]
+        section['line_ids'].append(line['id'])
+        section['word_ids'].extend(line['word_ids'])
+    for section in sections:
+        values=[by_id[wid] for wid in section['word_ids']]
+                if by_id[wid]['start'] is not None]
+        section['total_words']=len(section['word_ids'])
+        section['aligned_words']=len(values)
+        if values:
+            section['start']=min(w['start'] for w in values)
+            section['end']=max(w['end'] for w in values)
+    return sections
 
 def normalize(token):
     return ''.join(c for c in unicodedata.normalize('NFKC',token).casefold()
