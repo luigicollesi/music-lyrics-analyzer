@@ -14,11 +14,12 @@ def test_recovers_mistranscribed_inner_words_with_tentative_status():
     result = recover_with_word_asr(
         None, np.zeros(16000), words, 0, 8, "pt",
         transcript=transcript("Hoje momo cagal para não comer suafoz"))
-    assert result["recovered"] == 6
+    assert result["recovered"] == 7
     assert words[1]["alignment"]["status"] == "tentative"
     assert words[2]["text"] == "mingal"
     assert words[2]["start"] == 2.0
-    assert words[-1]["start"] is None
+    assert words[-1]["start"] == 4.0
+    assert words[-1]["alignment"]["status"] == "tentative"
 
 
 def test_does_not_overwrite_forced_alignment():
