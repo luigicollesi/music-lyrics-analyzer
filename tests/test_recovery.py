@@ -46,7 +46,8 @@ def test_rejects_conflicting_boundaries():
         None, np.zeros(16000), words, 0, 5, "pt",
         transcript=transcript("Hoje momo cagal para"))
     assert words[1]["start"] is None
-    assert words[2]["start"] is not None
+    assert words[2]["start"] is None
+    assert words[3]["start"] is not None
 
 
 class MockWord:
