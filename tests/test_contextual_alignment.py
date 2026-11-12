@@ -19,7 +19,7 @@ def test_noisy_example_preserves_known_lyrics():
         "exact", "contextual", "contextual", "exact", "exact", "exact", "contextual-edge"]
     assert result[1]["start"] == .4
     assert result[2]["text"] == "mingal"
-    assert result[-1]["start"] == 2.4
+    assert abs(result[-1]["start"] - 2.4) < 1e-6
     assert result[-1]["status"] == "contextual-edge"
 
 
