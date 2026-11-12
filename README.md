@@ -1,3 +1,15 @@
+## V0.4 (candidata): recuperação contextual de palavras
+
+Com `--strategy hierarchical --recovery auto` (padrão), as palavras que permanecerem sem timestamps após o alinhamento forçado são novamente investigadas em janelas curtas. O sistema solicita timestamps **por palavra** ao ASR e compara a transcrição ruidosa com a **letra original** por ordem de ocorrência, similaridade de caracteres e âncoras exatas.
+
+- `alignment.method=word-asr-exact`: palavra reconhecida exatamente na segunda passagem.
+- `word-asr-fuzzy`: semelhança textual alta.
+- `word-asr-contextual`: substituição recuperada entre duas âncoras confiáveis.
+- `word-asr-contextual-edge`: substituição próxima de borda, com duas âncoras consecutivas e semelhança parcial.
+- `alignment.status=tentative`: correspondência contextual inferida, **não confirmada acusticamente**. Não usar para animações frame-perfect sem revisão.
+
+O sistema não reparte artificialmente os tempos de segmentos por palavra, não altera horários previamente alinhados e não inventa palavras ausentes do reconhecimento. A cobertura pode aumentar, mas precisão em músicas reais ainda precisa ser medida por comparação com anotações humanas. Use `--recovery none` para desabilitar a segunda passagem.
+
 ## V0.3 — Entonação vocal por palavra
 
 A V0.3 adiciona estimativas acústicas opcionais de **pitch (F0)**, contorno melódico, intensidade RMS e evolução da intensidade para cada palavra alinhada. O processamento utiliza `librosa.pyin` em grupos de palavras com timestamps válidos, sem inventar dados para as palavras ausentes.
