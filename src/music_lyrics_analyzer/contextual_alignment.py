@@ -92,4 +92,16 @@ def align_transcript_words(lyrics: list[dict], transcript: list[dict],
             continue
         for delta in range(1, lyric_gap + 1):
             assign(left_a + delta, left_b + delta, "contextual")
+    # One leading/trailing substitution can be recovered when two consecutive
+    # anchors establish direction and the unpaired token is still reasonably
+    # similar. Never infer a timestamp from an entirely missing ASR token.
+    if len(anchors) >= 2:
+        first, second = anchors[0], anchors[1]
+        if first == (1, 1) and second == (2, 2):
+            if _score(reference[0], observed[0][1]) >= .45:
+                assign(0, 0, "contextual-edge")
+        penultimate, last = anchors[-2], anchors[-1]
+        if last == (n - 2, m - 2) and penultimate == (n - 3, m - 3):
+            if _score(reference[-1], observed[-1][1]) >= .45:
+                assign(n - 1, m - 1, "contextual-edge")
     return result
