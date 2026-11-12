@@ -9,26 +9,26 @@ import unicodedata
 import numpy as np
 
 TOKEN=re.compile(r"[^\W_]+(?:['’\-][^\W_]+)*",re.UNICODE)
-HEADING=re.compile(r"^\\s*\\[([^\\]]+)\\]\\s*$")
-MARKDOWN_HEADING=re.compile(r"^\\s*(#{1,6})\\s+(.+?)\\s*#*\\s*$")
+HEADING=re.compile(r"^\s*\[([^\]]+)\]\s*$")
+MARKDOWN_HEADING=re.compile(r"^\s*(#{1,6})\s+(.+?)\s*#*\s*$")
 SECTION_PATTERN=re.compile(
-    r"^(?P<kind>final\\s+chorus|post[- ]?chorus|pre[- ]?chorus|"
+    r"^(?P<kind>final\s+chorus|post[- ]?chorus|pre[- ]?chorus|"
     r"chorus|refr[aã]o|verse|verso|bridge|ponte|intro|introduction|"
     r"outro|ending|instrumental|interlude|interl[uú]dio|hook|"
-    r"prel[uú]dio|solo|break|coda)(?=\\s|\\d|\\(|$)", re.IGNORECASE)
+    r"prel[uú]dio|solo|break|coda)(?=\s|\d|\(|$)", re.IGNORECASE)
 SECTION_TYPES={'refrão':'chorus','verso':'verse','ponte':'bridge',
                'introduction':'intro','ending':'outro','interlúdio':'interlude','interludio':'interlude'}
-NON_LYRICAL=re.compile(r"^\\s*(?:\\*\\*.*\\*\\*|>.*|<!--.*-->|"
-                       r"[-*_]{3,}|\\|.*\\|)\\s*$")
+NON_LYRICAL=re.compile(r"^\s*(?:\*\*.*\*\*|>.*|<!--.*-->|"
+                       r"[-*_]{3,}|\|.*\|)\s*$")
  
 def section_info(label):
     """Return normalized section type and optional parenthetical descriptor."""
-    cleaned=re.sub(r'\\s+', ' ', label.strip())
+    cleaned=re.sub(r'\s+', ' ', label.strip())
     hit=SECTION_PATTERN.match(cleaned)
     if not hit: return None
     kind=hit.group('kind').casefold().replace(' ','-')
     kind=SECTION_TYPES.get(kind,kind)
-    extra=re.search(r'\\(([^)]+)\\)\\s*$', cleaned)
+    extra=re.search(r'\(([^)]+)\)\s*$', cleaned)
     return kind,extra.group(1).strip() if extra else None
 
 def parse_lyrics(text: str):
