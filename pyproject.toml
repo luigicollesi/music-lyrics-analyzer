@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "music-lyrics-analyzer"
+version = "0.1.0"
+description = "Local BPM, word timing and acoustic strength analyzer for music-video AI"
+requires-python = ">=3.11,<3.14"
+license = "MIT"
+dependencies = ["numpy>=1.26,<3", "librosa>=0.11,<2"]
+
+[project.optional-dependencies]
+align = ["stable-ts>=2.19,<3"]
+separation = ["demucs>=4,<5"]
+test = ["pytest>=8,<10"]
+
+[project.scripts]
+music-lyrics-analyzer = "music_lyrics_analyzer.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
