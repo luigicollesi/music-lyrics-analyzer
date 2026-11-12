@@ -7,6 +7,7 @@ import sys
 import numpy as np
 from .core import apply_alignment, collect_sections
 from .recovery import recover_with_word_asr
+from .gap_recovery import retry_unresolved_gaps
 from .localization import (find_anchor_candidates,choose_monotonic_anchors,
                            section_windows,validate_word_timeline)
 
@@ -195,6 +196,12 @@ def hierarchical_align(model, audio16, words, lines, *, language='pt',
                     'window':[gs,ge],'proposed_words':len(proposed),
                     'warnings':warnings[:8],'problems':problems[:16]})
                 errors.extend({'section_id':s['id'],**p} for p in problems)
+                if recovery and any(w['start'] is None for w in group_words):
+                    gap_report = retry_unresolved_gaps(
+                        model, audio16, group_words, gs, ge, language)
+                    attempts.append({'section_id':s['id'],
+                        'line_ids':[line['id'] for line in group_lines],
+                        'acoustic_gap_recovery':gap_report})
                 if recovery and any(w['start'] is None for w in group_words):
                     try:
                         recovered = recover_with_word_asr(
