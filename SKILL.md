@@ -43,6 +43,20 @@ python analise.py --music-path "song.wav" --lyrics-path "lyrics.md" --language p
 Use `--strategy legacy` for the previous global alignment baseline; `--asr-segments` for supplied recognizer segments; `--section-timings` for manually verified section windows; and `--vocals-path` for a pre-separated vocal file preserving the original timeline. `--max-local-seconds` constrains local alignment to avoid long drifting ranges. `--resume` caches the ASR output. None of these flags guarantee correct singing alignment.
 
 Read `diagnostics.sections[]` (coverage, anchor confidence, status), `diagnostics.errors[]` and `sections[].coverage` before deciding when to display lyrics in the video. A section may remain unresolved; do not fill its time by interpolating neighboring sections. Outputs require listening verification before frame-accurate production.
+## Vocal prosody per word (V0.3; opt-in)
+
+After verified lyric alignment, run `--prosody pyin` to estimate vocal F0, melody contour, RMS and dynamics for each word. This is acoustic measurement, **not** reliable emotion, shouting, breathiness or vibrato classification: unknown delivery properties are always null.
+
+```bash
+python analise.py --music-path song.wav --lyrics-path lyrics.md --strategy hierarchical --prosody pyin --pitch-contour --vocals-path vocals.wav --report --resume
+```
+
+For deterministic timing tests, supply trusted `--word-timings trusted.json` instead of ASR. The original audio and separated stem must start at exactly the same time and have matching duration. Prefer the vocal stem: mixtures can cause the estimated F0 to track instruments, so output is marked reliability `low` if no stem is provided.
+
+Per-word data is in `words[].vocal` (null if the word is not aligned). Pitch contains median F0 (`mean_hz`), 10th/90th percentile bounds (`min_hz` and `max_hz`), voiced_fraction, voicing_probability, contour (`rising`, `falling`, `steady`, `variable` or null), change in semitones, and optional timestamped F0 samples. Intensity provides RMS/peak in dBFS, attack_db, relative change_db and an energy contour. Signal normalization affects absolute values. Per-frame samples are emitted only with `--pitch-contour` to keep the JSON small.
+
+Pitch inference is bounded to short contiguous groups of already-aligned words. Set `--pitch-min-hz`, `--pitch-max-hz` and `--pitch-hop-length` to accommodate singer pitch range and precision. Missing/unvoiced pitch stays null. Pitch tracking can make octave and voicing errors; verify against isolated vocals and listening before frame-accurate graphics. No timestamps or emotions may be invented. `schema_version` becomes 2 if enabled, otherwise remains 1 for compatibility.
+
 ## Read the result
 
 Use `rhythm.bpm`, `rhythm.beats`, `words[].start`, `words[].end`, `words[].strength`, `words[].alignment.status`, and `warnings`. Each word has a unique ID, including repetitions. `strength` is a *track-relative acoustic proxy*, not emotion or objective vocal force. When `analysis.strength_source` is `mixture`, instrument levels can bias it.

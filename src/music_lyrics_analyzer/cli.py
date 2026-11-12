@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 from .core import parse_lyrics,collect_sections,apply_alignment,beat_analysis,strength_analysis,file_hash,lrc_lines
 from .hierarchical import hierarchical_align
+from .prosody import analyze_vocal_prosody
 
 def read_audio(path: Path,sr=22050):
     import numpy as np
@@ -134,6 +135,14 @@ def analyze(args):
         print('4/4 Medindo intensidade acústica...',file=sys.stderr)
         voice,_=read_audio(vocal_audio,sr) if source=='vocals' else (y,sr)
         warnings+=strength_analysis(voice,sr,words,source=source)
+        prosody_summary=None
+        if args.prosody=='pyin':
+            print('5/5 Medindo prosódia vocal por palavra (pYIN)...',file=sys.stderr)
+            prosody_summary,prosody_warnings=analyze_vocal_prosody(
+                voice,sr,words,source=source,fmin=args.pitch_min_hz,
+                fmax=args.pitch_max_hz,hop_length=args.pitch_hop_length,
+                include_contour=args.pitch_contour)
+            warnings+=prosody_warnings
     sections=collect_sections(lines,words)
     quality={sec['id']:{'coverage':round(sec['aligned_words']/max(1,sec['total_words']),4),
                           'status':('unresolved' if sec['aligned_words']==0 else
@@ -141,13 +150,16 @@ def analyze(args):
              for sec in sections}
     for sec in sections:
         sec.update(quality[sec['id']])
-    result={'schema_version':1,
+    result={'schema_version':2 if args.prosody=='pyin' else 1,
             'audio':{'path':str(music),'duration_seconds':round(duration,3),
                      'sample_rate':sr,'sha256':file_hash(music)},
             'rhythm':rhythm,'sections':sections,'lines':lines,'words':words,
             'analysis':{'aligner':method,'separator':args.separator,'language':args.language,
                         'strength_definition':'relative_acoustic_proxy','strength_source':source,
-                        'strategy':args.strategy},
+                        'strategy':args.strategy,
+                        'prosody_method':args.prosody,
+                        'prosody_source':source if args.prosody=='pyin' else None},
+            'prosody':prosody_summary,
             'diagnostics':{'sections':diagnostic.get('sections',[]),
                            'errors':diagnostic.get('errors',[]),
                            'attempts':diagnostic.get('attempts',[])},
@@ -193,6 +205,13 @@ def main(argv=None):
     p.add_argument('--separator',choices=['none','demucs'],default='none')
     p.add_argument('--word-timings',help='JSON de tempos manuais para testes.')
     p.add_argument('--lrc',action='store_true',help='Gerar também arquivo LRC.')
+    p.add_argument('--prosody',choices=['none','pyin'],default='none',
+                   help='Analisar a altura e a dinâmica da voz em cada palavra alinhada.')
+    p.add_argument('--pitch-min-hz',type=float,default=75.,help='Limite inferior de frequência fundamental.')
+    p.add_argument('--pitch-max-hz',type=float,default=1000.,help='Limite superior de frequência fundamental.')
+    p.add_argument('--pitch-hop-length',type=int,default=256,help='Amostras por frame na análise pYIN.')
+    p.add_argument('--pitch-contour',action='store_true',
+                   help='Exportar curva de pitch por frame dentro de cada palavra.')
     args=p.parse_args(argv)
     try:return analyze(args)
     except (RuntimeError,FileNotFoundError,ValueError,OSError) as exc:

@@ -1,3 +1,19 @@
+## V0.3 — Entonação vocal por palavra
+
+A V0.3 adiciona estimativas acústicas opcionais de **pitch (F0)**, contorno melódico, intensidade RMS e evolução da intensidade para cada palavra alinhada. O processamento utiliza `librosa.pyin` em grupos de palavras com timestamps válidos, sem inventar dados para as palavras ausentes.
+
+```bash
+python analise.py --music-path audio/song.wav --lyrics-path lyrics/song.md --strategy hierarchical --prosody pyin --pitch-contour --vocals-path audio/vocals.wav --report --resume
+```
+
+Para experimentos, `--word-timings verified.json` permite calcular prosódia sobre horários conferidos manualmente, evitando executar ASR. Se não houver vocais separados, o resultado terá `reliability: low`, pois instrumentos podem dominar a frequência fundamental detectada.
+
+Cada palavra recebe `vocal.pitch` (mediana F0, faixa 10º/90º percentil, tendência de altura, fração de frames sonoros, pontos de pitch opcionais com timestamps absolutos), `vocal.intensity` (RMS e pico em dBFS, ataque e tendência de energia) e `vocal.delivery` com características não verificadas deixadas como `null` (por exemplo, gritado, soproso, vibrato). O campo `vocal` inteiro é `null` quando não há alinhamento válido. O resultado também inclui `prosody` com cobertura de palavras analisadas.
+
+Flags: `--prosody none|pyin` (padrão none); `--pitch-min-hz` (75); `--pitch-max-hz` (1000); `--pitch-hop-length` (256); `--pitch-contour` exporta a curva por frame. O esquema JSON passa a versão 2 quando a prosódia está habilitada; versão 1 sem prosódia.
+
+**Avisos:** a análise mede propriedades acústicas, não emoções. Octavas, vozeamento e timestamps podem estar errados quando o canto é polifônico, quando há silêncio ou quando o alinhamento da letra é impreciso. Confira a gravação antes de efeitos sincronizados por frame. A música original e o stem de voz devem manter o mesmo tempo inicial e duração.
+
 # Music Lyrics Analyzer
 
 Skill e CLI Python para extrair BPM, batidas, tempo de cada palavra cantada e **força acústica relativa (0–100)** de uma música e sua letra. Executa localmente; não envia o áudio para APIs. Alinhamento automático é feito com [stable-ts](https://github.com/jianfch/stable-ts), quando instalado. **Não funciona por adivinhação:** sem alinhamento, os tempos/forças ficam `null`.
