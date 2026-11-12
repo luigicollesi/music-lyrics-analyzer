@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import numpy as np
 from .core import apply_alignment, collect_sections
+from .recovery import recover_with_word_asr
 from .localization import (find_anchor_candidates,choose_monotonic_anchors,
                            section_windows,validate_word_timeline)
 
@@ -194,6 +195,18 @@ def hierarchical_align(model, audio16, words, lines, *, language='pt',
                     'window':[gs,ge],'proposed_words':len(proposed),
                     'warnings':warnings[:8],'problems':problems[:16]})
                 errors.extend({'section_id':s['id'],**p} for p in problems)
+                if recovery and any(w['start'] is None for w in group_words):
+                    try:
+                        recovered = recover_with_word_asr(
+                            model, audio16, group_words, gs, ge, language)
+                        attempts.append({'section_id':s['id'],
+                            'line_ids':[line['id'] for line in group_lines],
+                            'word_asr_recovery':recovered})
+                    except Exception as exc:
+                        # Optional recovery must never destroy the first pass.
+                        errors.append({'section_id':s['id'],
+                            'code':'WORD_ASR_RECOVERY_ERROR',
+                            'message':str(exc)[:300]})
             # Check that separately processed line groups also agree with each
             # other in the section's absolute time coordinate.
             cross_problems=validate_word_timeline(region_words)
