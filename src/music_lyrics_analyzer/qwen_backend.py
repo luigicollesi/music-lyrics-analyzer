@@ -145,7 +145,7 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
                          encoder_memory_trace=False,
                          offload_granularity="tensor", transfer_report=False,
                          resident_gpu_weights_gib=1.0,
-                         activation_reserve_gib=1.5):
+                         activation_reserve_gib=1.5, placement_audit=False):
     """One Qwen transcription request for the whole audio, without cropping.
 
     The result contains text, NOT timestamped phrases. A generation output
@@ -229,6 +229,14 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
     device_map=getattr(model.model,"hf_device_map",None)
     from .inference_runtime.residency_manager import residency_summary
     placement_summary=residency_summary(device_map)
+    if placement_audit:
+        import json
+        from .inference_runtime.placement_audit import audit_placement
+        placement_details=audit_placement(model.model)
+        print("[Qwen placement] "+
+              json.dumps(placement_details,ensure_ascii=False),flush=True)
+    else:
+        placement_details=None
     if plan.device.startswith("cuda"):
         torch.cuda.reset_peak_memory_stats(0)
     from contextlib import nullcontext
@@ -274,6 +282,7 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
         "gpu_memory_budget_gb":(resident_gpu_weights_gib if device=="resident" else gpu_memory_gb if device=="hybrid" else None),
         "activation_reserve_gb":activation_reserve_gib if device=="resident" else None,
         "residency_summary":placement_summary if device=="resident" else None,
+        "placement_audit":placement_details,
         "cpu_memory_budget_gb":cpu_memory_gb if device=="hybrid" else None,
         "device_map":device_map,
         "offload_granularity":offload_granularity if device=="streamed" else None,
