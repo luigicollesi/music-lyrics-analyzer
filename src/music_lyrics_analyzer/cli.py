@@ -125,6 +125,8 @@ def analyze(args):
                                     args.qwen_device+str(args.qwen_max_new_tokens)+
                                     str(args.qwen_gpu_memory_gb)+str(args.qwen_cpu_memory_gb)+
                                     args.qwen_offload_granularity+
+                                    str(args.qwen_resident_weights_gib)+
+                                    str(args.qwen_activation_reserve_gib)+
                                     'qwen-full-v2').encode()).hexdigest()[:20]
                         qwen_cache=output.parent/'.cache'/f'qwen-full-{key}.json'
                     if qwen_cache and qwen_cache.is_file():
@@ -143,7 +145,9 @@ def analyze(args):
                             memory_report=args.qwen_memory_report,
                             encoder_memory_trace=args.qwen_encoder_memory_trace,
                             offload_granularity=args.qwen_offload_granularity,
-                            transfer_report=args.qwen_transfer_report)
+                            transfer_report=args.qwen_transfer_report,
+                            resident_gpu_weights_gib=args.qwen_resident_weights_gib,
+                            activation_reserve_gib=args.qwen_activation_reserve_gib)
                         if qwen_cache:
                             qwen_cache.parent.mkdir(parents=True,exist_ok=True)
                             qwen_cache.write_text(json.dumps(qwen_full,ensure_ascii=False,indent=2),
@@ -153,8 +157,8 @@ def analyze(args):
                         'role':'full_text_diagnostic_not_timing_anchor',
                         'transcript':qwen_full}
                 else:
-                    if args.qwen_device in ('hybrid','streamed'):
-                        raise ValueError('--qwen-device hybrid/streamed requer --qwen-mode full.')
+                    if args.qwen_device in ('hybrid','streamed','resident'):
+                        raise ValueError('--qwen-device hybrid/streamed/resident requer --qwen-mode full.')
                     qwen_cache=None
                     if args.resume:
                         key=sha256((file_hash(vocal_audio)+args.qwen_model+
@@ -473,10 +477,14 @@ def main(argv=None):
                    help='Orçamento de tokens da transcrição integral.')
     p.add_argument('--qwen-model',choices=['0.6b','1.7b'],default='0.6b',
                    help='Modelo Qwen3-ASR opcional; 1.7b exige mais memória.')
-    p.add_argument('--qwen-device',choices=['cuda','cpu','auto','hybrid','streamed'],default='cuda',
+    p.add_argument('--qwen-device',choices=['cuda','cpu','auto','hybrid','streamed','resident'],default='cuda',
                    help='Dispositivo Qwen, CUDA explícito por padrão quando selecionado.')
     p.add_argument('--qwen-chunk-seconds',type=float,default=16.,
                    help='Duração da janela de transcrição Qwen (sobreposição 50%%).')
+    p.add_argument('--qwen-resident-weights-gib',type=float,default=1.0,
+                   help='Orçamento GPU para pesos residentes (modo full/resident).')
+    p.add_argument('--qwen-activation-reserve-gib',type=float,default=1.5,
+                   help='Reserva minima de VRAM fora do orçamento dos pesos (full/resident).')
     p.add_argument('--qwen-transfer-report',action='store_true',
                    help='Medir chamadas e volume estimado de offloading Accelerate em tempo real.')
     p.add_argument('--qwen-offload-granularity',choices=['tensor','layer'],
