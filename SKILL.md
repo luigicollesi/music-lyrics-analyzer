@@ -663,3 +663,18 @@ python analise.py --music-path /path/to/video.mp4 --lyrics-path /path/to/LETRA_D
 ```
 Video input depends on the repository audio loader's ffmpeg support;
 when in doubt use an extracted WAV from the same source video.
+
+## Decoder dispatch meta-tensor regression correction
+
+The previous decoder-priority map set the root `""` to CPU while also
+assigning descendants to CUDA. This overlapping map is unsafe under
+Accelerate CPU offload hooks and can lead to:
+`weight is on the meta device, we need a value to put in on 0`.
+
+The corrected map partitions modules without overlapping CPU ancestors
+and CUDA descendants, validates device-map coverage using Accelerate,
+and fails early if CPU-loaded parameters remain on `meta`. It does not
+silently replace missing model values with invented tensors. This is
+an experimental correction until verified in a live 0.6B inference on
+the target GTX 1050 Ti. The temperature generation-flag warning is
+unrelated to this exception.
