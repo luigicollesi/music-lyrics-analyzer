@@ -14,15 +14,37 @@ def phrase_ctc_recovery(backend, audio16, words, lines, sections, *,
     """
     all_candidates=[]
     attempts=[]
-    for section in sections:
-        bounds=section.get("window")
-        if not bounds:
-            continue
+    known=[section for section in sections if section.get("window")]
+    for section_idx, section in enumerate(known):
+        bounds=section["window"]
         sec_words=[word for word in words if word["section_id"]==section["id"]]
         sec_lines=[line for line in lines if line["section_id"]==section["id"]]
+        lo,hi=map(float,bounds)
+        # Section windows inferred from *aligned* words often start after
+        # an unresolved lyrical prefix. Expand cautiously, constrained by
+        # adjacent sections, and expose the change in the attempt log.
+        expanded=[]
+        if sec_words and sec_words[0].get("start") is None:
+            prev_end=(float(known[section_idx-1]["window"][1])
+                      if section_idx else 0.)
+            widened=max(prev_end,lo-2.5)
+            if widened<lo:
+                expanded.append({"edge":"start","from":lo,"to":widened})
+                lo=widened
+        if sec_words and sec_words[-1].get("start") is None:
+            following=(float(known[section_idx+1]["window"][0])
+                       if section_idx+1<len(known) else len(audio16)/16000)
+            widened=min(following,hi+2.5)
+            if widened>hi:
+                expanded.append({"edge":"end","from":hi,"to":widened})
+                hi=widened
+        if expanded:
+            attempts.append({"section_id":section["id"],
+                             "status":"section_window_expanded",
+                             "edges":expanded})
         windows,issues=plan_phrase_windows(
-            sec_words,sec_lines,section_start=float(bounds[0]),
-            section_end=float(bounds[1]))
+            sec_words,sec_lines,section_start=lo,
+            section_end=hi)
         for issue in issues:
             attempts.append({"section_id":section["id"],**issue,
                              "status":"skipped"})
