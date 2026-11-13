@@ -170,6 +170,10 @@ def analyze(args):
                 if (not isinstance(bounds,list) or len(bounds)!=2 or
                     not 0 <= float(bounds[0]) < float(bounds[1]) <= duration+.1):
                     raise ValueError('Seção manual inválida: '+sec['label'])
+                if float(bounds[1])-float(bounds[0]) > 20.:
+                    raise ValueError(
+                        'Seção maior que 20 s no modo CTC isolado: '+sec['label']+
+                        '. Use --aligner hybrid para localizar janelas menores.')
                 region=[w for w in words if w['section_id']==sec['id']]
                 report=recover_ctc_gaps(ctc,audio16,region,
                                         start=float(bounds[0]),end=float(bounds[1]),
