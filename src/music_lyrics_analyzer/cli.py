@@ -159,7 +159,8 @@ def analyze(args):
                         'window_mode':'phrase',
                         'attempts':len(recovery_report['attempts']),
                         'candidate_count':len(recovery_report['candidates']),
-                        'resolver_accepted':recovery_report['resolver']['accepted_count']}
+                        'resolver_accepted':recovery_report['resolver']['accepted_count'],
+                        'model_integrity':ctc.integrity.to_dict()}
                     diagnostic.setdefault('attempts',[]).extend(
                         {'ctc_phrase':item}
                         for item in recovery_report['attempts'])
@@ -171,9 +172,10 @@ def analyze(args):
                         'score_window':args.ctc_score_window,
                         'threshold':args.ctc_threshold,
                         'audio_sha256':file_hash(music),
+                        'model_integrity':ctc.integrity.to_dict(),
                         'candidates':recovery_report['candidates'],
                         'resolver':recovery_report['resolver']},
-                        ensure_ascii=False,indent=2)+'\\n',encoding='utf-8')
+                        ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
                     print(f'  CTC candidatos: {candidate_path}',file=sys.stderr)
                 else:
                     recovered_total = 0
@@ -211,7 +213,8 @@ def analyze(args):
                               file=sys.stderr)
                     diagnostic['ctc_summary'] = {
                         'recovered': recovered_total, 'statuses': ctc_statuses,
-                        'samples': ctc_samples}
+                        'samples': ctc_samples,
+                        'model_integrity':ctc.integrity.to_dict()}
                 method='hybrid-stable-ts-ctc'
             remaining = sum(w['start'] is None for w in words)
             if remaining:
