@@ -30,8 +30,8 @@ class TransferProfiler:
         original=hooks.set_module_tensor_to_device
         def wrapped(*args,**kwargs):
             value=kwargs.get("value")
-            if value is None and len(args)>4:
-                value=args[4]
+            if value is None and len(args)>3:
+                value=args[3]
             size=(value.numel()*value.element_size()
                   if value is not None and hasattr(value,"numel") else 0)
             start=perf_counter()
