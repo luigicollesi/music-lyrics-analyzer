@@ -119,6 +119,24 @@ def transcribe_qwen_windows(audio16, *, model_size="0.6b",
     return output,plan
 
 
+class _QwenOffloadDeviceProxy:
+    """Expose the real CUDA execution device to the Qwen wrapper.
+
+    Accelerate cpu_offload intentionally replaces model parameters with meta
+    placeholders. Qwen's wrapper reads self.model.device to move token/audio
+    inputs, which otherwise sends tensors to meta and fails during generation.
+    The proxy only corrects that public-facing device, preserving the
+    underlying model's Accelerate hooks and its generate implementation.
+    """
+    def __init__(self, module, execution_device, dtype):
+        object.__setattr__(self,"_wrapped",module)
+        object.__setattr__(self,"device",execution_device)
+        object.__setattr__(self,"dtype",dtype)
+
+    def __getattr__(self, name):
+        return getattr(self._wrapped,name)
+
+
 def transcribe_qwen_full(audio16, *, model_size="0.6b",
                          device="cuda", language="Portuguese",
                          max_new_tokens=2048, minimum_vram_gb=0.,
@@ -178,10 +196,14 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
         MODELS[model_size],dtype=dtype,**placement,
         max_inference_batch_size=1,max_new_tokens=max_new_tokens)
     if device=="streamed" and plan.device.startswith("cuda"):
-        cpu_offload(model.model,execution_device=torch.device("cuda:0"))
-        # The official Qwen ASR wrapper stores its inference device at
-        # initialization. Refresh it after adding Accelerate hooks.
-        model.device=torch.device("cuda:0")
+        execution_device=torch.device("cuda:0")
+        cpu_offload(model.model,execution_device=execution_device)
+        # The upstream Qwen wrapper uses self.model.device to place input
+        # tensors; after cpu_offload that value becomes 'meta'. Expose the
+        # real execution device without changing the underlying HF model.
+        model.model=_QwenOffloadDeviceProxy(
+            model.model,execution_device,torch.float16)
+        model.device=execution_device
     device_map=getattr(model.model,"hf_device_map",None)
     if plan.device.startswith("cuda"):
         torch.cuda.reset_peak_memory_stats(0)
