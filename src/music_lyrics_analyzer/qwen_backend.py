@@ -226,6 +226,9 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
             model.model,gpu_weights_gib=resident_gpu_weights_gib,
             reserve_gib=activation_reserve_gib,
             physical_vram_gib=plan.total_vram_gb)
+        from .inference_runtime.generation_device import bind_generation_execution_device
+        bind_generation_execution_device(model.model,torch.device("cuda:0"))
+        bind_generation_execution_device(model.model.thinker,torch.device("cuda:0"))
         model.device=torch.device("cuda:0")
         print("[Qwen decoder priority] "+str(decoder_plan),
               flush=True)
