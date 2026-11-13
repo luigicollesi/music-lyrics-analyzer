@@ -131,42 +131,71 @@ def analyze(args):
                 from .ctc_backend import MMSBackend, recover_ctc_gaps
                 ctc = MMSBackend(model_id=args.ctc_model,
                                  language=args.ctc_language,device=args.device)
-                recovered_total = 0
-                ctc_statuses = {}
-                ctc_samples = []
-                for section in diagnostic.get('sections', []):
-                    window = section.get('window')
-                    if window is None:
-                        continue
-                    section_words = [w for w in words
-                                     if w['section_id']==section['id']]
-                    report = recover_ctc_gaps(
-                        ctc, audio16, section_words,
-                        start=window[0], end=window[1],
-                        threshold=args.ctc_threshold)
-                    recovered_total += report['recovered']
-                    for label, number in report.get('attempt_statuses', {}).items():
-                        ctc_statuses[label] = ctc_statuses.get(label, 0) + number
-                    for item in report.get('attempts', []):
-                        if item.get('status') in ('error','no_accepted_candidates',
-                                                  'skipped_window','skipped_too_short'):
-                            if len(ctc_samples) < 8:
-                                ctc_samples.append({
-                                    'word_id': item.get('first_word_id'),
-                                    'status': item.get('status'),
-                                    'detail': item.get('message') or
-                                              item.get('ctc_diagnostic'),
-                                    'window': item.get('window')})
-                    diagnostic.setdefault('attempts', []).append({
-                        'section_id': section['id'], 'ctc_recovery':report})
-                print(f'  CTC recuperou {recovered_total} palavras candidatas.',file=sys.stderr)
-                print('  CTC status:', ctc_statuses, file=sys.stderr)
-                for sample in ctc_samples:
-                    print('  CTC diagnóstico:', json.dumps(sample,ensure_ascii=False),
-                          file=sys.stderr)
-                diagnostic['ctc_summary'] = {
-                    'recovered': recovered_total, 'statuses': ctc_statuses,
-                    'samples': ctc_samples}
+                if args.ctc_window_mode == 'phrase':
+                    from .phrase_recovery import phrase_ctc_recovery
+                    recovery_report=phrase_ctc_recovery(
+                        ctc,audio16,words,lines,diagnostic.get('sections',[]),
+                        threshold=args.ctc_threshold,
+                        score_window=args.ctc_score_window)
+                    recovered_total=recovery_report['recovered']
+                    diagnostic['ctc_summary']={
+                        'recovered':recovered_total,
+                        'window_mode':'phrase',
+                        'attempts':len(recovery_report['attempts']),
+                        'candidate_count':len(recovery_report['candidates']),
+                        'resolver_accepted':recovery_report['resolver']['accepted_count']}
+                    diagnostic.setdefault('attempts',[]).extend(
+                        {'ctc_phrase':item}
+                        for item in recovery_report['attempts'])
+                    candidate_path=output.with_name(output.stem+'-ctc-candidates.json')
+                    candidate_path.write_text(json.dumps({
+                        'schema_version':1,
+                        'model':args.ctc_model,
+                        'language':args.ctc_language,
+                        'score_window':args.ctc_score_window,
+                        'threshold':args.ctc_threshold,
+                        'audio_sha256':file_hash(music),
+                        'candidates':recovery_report['candidates'],
+                        'resolver':recovery_report['resolver']},
+                        ensure_ascii=False,indent=2)+'\\n',encoding='utf-8')
+                    print(f'  CTC candidatos: {candidate_path}',file=sys.stderr)
+                else:
+                    recovered_total = 0
+                    ctc_statuses = {}
+                    ctc_samples = []
+                    for section in diagnostic.get('sections', []):
+                        window = section.get('window')
+                        if window is None:
+                            continue
+                        section_words = [w for w in words
+                                         if w['section_id']==section['id']]
+                        report = recover_ctc_gaps(
+                            ctc, audio16, section_words,
+                            start=window[0], end=window[1],
+                            threshold=args.ctc_threshold)
+                        recovered_total += report['recovered']
+                        for label, number in report.get('attempt_statuses', {}).items():
+                            ctc_statuses[label] = ctc_statuses.get(label, 0) + number
+                        for item in report.get('attempts', []):
+                            if item.get('status') in ('error','no_accepted_candidates',
+                                                      'skipped_window','skipped_too_short'):
+                                if len(ctc_samples) < 8:
+                                    ctc_samples.append({
+                                        'word_id': item.get('first_word_id'),
+                                        'status': item.get('status'),
+                                        'detail': item.get('message') or
+                                                  item.get('ctc_diagnostic'),
+                                        'window': item.get('window')})
+                        diagnostic.setdefault('attempts', []).append({
+                            'section_id': section['id'], 'ctc_recovery':report})
+                    print(f'  CTC recuperou {recovered_total} palavras candidatas.',file=sys.stderr)
+                    print('  CTC status:', ctc_statuses, file=sys.stderr)
+                    for sample in ctc_samples:
+                        print('  CTC diagnóstico:', json.dumps(sample,ensure_ascii=False),
+                              file=sys.stderr)
+                    diagnostic['ctc_summary'] = {
+                        'recovered': recovered_total, 'statuses': ctc_statuses,
+                        'samples': ctc_samples}
                 method='hybrid-stable-ts-ctc'
             remaining = sum(w['start'] is None for w in words)
             if remaining:
@@ -226,6 +255,10 @@ def analyze(args):
                 fmax=args.pitch_max_hz,hop_length=args.pitch_hop_length,
                 include_contour=args.pitch_contour)
             warnings+=prosody_warnings
+    from .candidate_resolver import timeline_issues
+    final_issues=timeline_issues(words,duration=duration)
+    if final_issues:
+        warnings.append(f'{len(final_issues)} inconsistências temporais na timeline final; revisar diagnostics.timeline_issues.')
     sections=collect_sections(lines,words)
     quality={sec['id']:{'coverage':round(sec['aligned_words']/max(1,sec['total_words']),4),
                           'status':('unresolved' if sec['aligned_words']==0 else
@@ -256,7 +289,8 @@ def analyze(args):
             'diagnostics':{'sections':diagnostic.get('sections',[]),
                            'errors':diagnostic.get('errors',[]),
                            'attempts':diagnostic.get('attempts',[]),
-                           'ctc_summary':diagnostic.get('ctc_summary')},
+                           'ctc_summary':diagnostic.get('ctc_summary'),
+                           'timeline_issues':final_issues},
             'warnings':warnings}
     output.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     if args.lrc:output.with_suffix('.lrc').write_text(lrc_lines(words),encoding='utf-8')
@@ -289,6 +323,10 @@ def main(argv=None):
     p.add_argument('--aligner',choices=['stable-ts','hybrid','ctc','none'],default='stable-ts')
     p.add_argument('--ctc-model',default='facebook/mms-1b-all',help='Checkpoint Hugging Face CTC, baixado apenas quando usado.')
     p.add_argument('--ctc-language',default='por',help='Adaptador de idioma MMS (Português: por).')
+    p.add_argument('--ctc-window-mode',choices=['gap','phrase'],default='phrase',
+                   help='CTC por frase com resolução posterior (padrão) ou lacuna isolada (baseline).')
+    p.add_argument('--ctc-score-window',type=int,default=2,
+                   help='Largura da janela de score do decoder (frames, 1 a 100).')
     p.add_argument('--ctc-threshold',type=float,default=-2.5,help='Limite de score acústico CTC (log-probabilidade); não é confiança calibrada.')
     p.add_argument('--strategy',choices=['hierarchical','legacy'],default='hierarchical',
                    help='Localização hierárquica (padrão) ou alinhamento global anterior.')
