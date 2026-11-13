@@ -145,7 +145,8 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
                          encoder_memory_trace=False,
                          offload_granularity="tensor", transfer_report=False,
                          resident_gpu_weights_gib=1.0,
-                         activation_reserve_gib=1.5, placement_audit=False):
+                         activation_reserve_gib=1.5, placement_audit=False,
+                         placement_strategy="auto"):
     """One Qwen transcription request for the whole audio, without cropping.
 
     The result contains text, NOT timestamped phrases. A generation output
@@ -170,6 +171,11 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
     from .inference_runtime.memory_profiler import MemoryProfiler
     profiler=MemoryProfiler(torch,enabled=memory_report)
     profiler.mark("before_model_load")
+    if placement_strategy not in ("auto","decoder"):
+        raise ValueError("Unknown Qwen placement strategy.")
+    if placement_strategy=="decoder" and device!="resident":
+        raise ValueError("Decoder-first placement requires --qwen-device resident.")
+    decoder_plan=None
     if device=="resident":
         from .inference_runtime.residency_manager import budget_for_residency
         plan=choose_device(torch,"cuda",minimum_vram_gb=minimum_vram_gb)
@@ -178,6 +184,8 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
             weights_gib=resident_gpu_weights_gib,
             reserve_gib=activation_reserve_gib,
             cpu_memory_gib=cpu_memory_gb)
+        if placement_strategy=="decoder":
+            placement={"device_map":"cpu","low_cpu_mem_usage":True}
         dtype=torch.float16
     elif device=="streamed":
         # Genuine full-model per-forward parameter streaming: weights live
@@ -212,6 +220,15 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
         MODELS[model_size],dtype=dtype,**placement,
         max_inference_batch_size=1,max_new_tokens=max_new_tokens)
     profiler.mark("after_model_load")
+    if device=="resident" and placement_strategy=="decoder":
+        from .inference_runtime.decoder_placement import apply_decoder_priority
+        model.model,decoder_plan=apply_decoder_priority(
+            model.model,gpu_weights_gib=resident_gpu_weights_gib,
+            reserve_gib=activation_reserve_gib,
+            physical_vram_gib=plan.total_vram_gb)
+        model.device=torch.device("cuda:0")
+        print("[Qwen decoder priority] "+str(decoder_plan),
+              flush=True)
     if device=="streamed" and plan.device.startswith("cuda"):
         execution_device=torch.device("cuda:0")
         from .inference_runtime.weight_manager import attach_weight_offload
@@ -283,6 +300,7 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
         "activation_reserve_gb":activation_reserve_gib if device=="resident" else None,
         "residency_summary":placement_summary if device=="resident" else None,
         "placement_audit":placement_details,
+        "decoder_placement":decoder_plan,
         "cpu_memory_budget_gb":cpu_memory_gb if device=="hybrid" else None,
         "device_map":device_map,
         "offload_granularity":offload_granularity if device=="streamed" else None,
