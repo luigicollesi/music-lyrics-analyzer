@@ -141,7 +141,8 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
                          device="cuda", language="Portuguese",
                          max_new_tokens=2048, minimum_vram_gb=0.,
                          max_audio_seconds=600., gpu_memory_gb=2.5,
-                         cpu_memory_gb=12., memory_report=False):
+                         cpu_memory_gb=12., memory_report=False,
+                         encoder_memory_trace=False):
     """One Qwen transcription request for the whole audio, without cropping.
 
     The result contains text, NOT timestamped phrases. A generation output
@@ -215,13 +216,25 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
     device_map=getattr(model.model,"hf_device_map",None)
     if plan.device.startswith("cuda"):
         torch.cuda.reset_peak_memory_stats(0)
+    from contextlib import nullcontext
+    if encoder_memory_trace:
+        from .inference_runtime.encoder_profiler import EncoderMemoryTrace
+        encoder_trace=EncoderMemoryTrace(torch)
+        tracing=encoder_trace.observe(model.model)
+    else:
+        encoder_trace=None
+        tracing=nullcontext()
     try:
-        result=model.transcribe(audio=(samples,16000),language=language)
+        with tracing:
+            result=model.transcribe(audio=(samples,16000),language=language)
     except torch.cuda.OutOfMemoryError as exc:
         profiler.mark("oom_during_transcribe")
         import json
         details=(" Memory checkpoints: "+
                  json.dumps(profiler.to_dict(),ensure_ascii=False)) if memory_report else ""
+        if encoder_trace is not None:
+            details+=" Encoder trace: "+json.dumps(
+                encoder_trace.to_dict(),ensure_ascii=False)
         raise RuntimeError(
             "Qwen full-audio inference exceeded CUDA VRAM. "
             "Weight streaming does not eliminate audio-encoder activations. "
@@ -247,6 +260,7 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
         "word_count":len(text.split()),
         "token_limit_risk":len(text.split()) >= max_new_tokens//3,
         "memory_report":profiler.to_dict() if memory_report else None,
+        "encoder_memory_trace":encoder_trace.to_dict() if encoder_trace is not None else None,
         "offload_integrity":offload_status if device=="streamed" and plan.device.startswith("cuda") else None,
         "time_precision":"none",
         "status":"transcribed_unverified",
