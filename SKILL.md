@@ -322,3 +322,38 @@ Check `asr_localization` in the output report, examine `skipped`
 attempts (especially `ambiguous_asr_occurrence` and
 `no_strong_asr_match`), and validate correct location by listening
 to the actual crop before changing the accepted timeline.
+
+## Experimental Qwen3-ASR auxiliary backend on NVIDIA GPU
+
+Install optionally: `python -m pip install -e '.[align,ctc,qwen]'`.
+Use `--asr-backend qwen --qwen-model 0.6b --qwen-device cuda`
+for CUDA or switch to `1.7b` for a larger checkpoint on sufficient
+hardware. Qwen processes 16-second overlapping crops with an 8-second
+hop by default; each ASR record is **only bounded by its entire crop**,
+not word-level timing. It is used to propose locations; all accepted
+word timings still require acoustic confirmation.
+
+Example:
+```bash
+python analise.py --music-path audio/Inferno.wav \
+ --lyrics-path lyrics/Inferno.md --aligner hybrid --strategy hierarchical \
+ --asr-backend qwen --qwen-model 0.6b --qwen-device cuda \
+ --ctc-window-mode overlap --ctc-device cpu --device cpu \
+ --resume --report --output analysis/qwen-gpu-review.json
+```
+
+**Important legacy GPU caveat:** GTX 1050 Ti is Pascal, compute capability
+6.1. Modern CUDA 13 PyTorch wheels do not contain kernels for this GPU.
+The loader checks the *installed* CUDA architecture list before loading
+Qwen and refuses an unsupported CUDA request rather than silently running
+on CPU. A legacy CUDA 12.x PyTorch build that actually includes `sm_61`
+is necessary, and the remaining VRAM may still be insufficient. Do not
+install FlashAttention 2 or vLLM on Pascal. Qwen's source FP16 support
+on old kernels is unverified here; use `--qwen-device cpu` if CUDA errors.
+The large model is not expected to fit in 4 GiB VRAM without additional
+quantization/offload engineering.
+
+This integration uses the official `qwen-asr` Transformers backend;
+it neither installs model weights by default nor changes the baseline
+`--asr-backend whisper`. Full pipeline accuracy and actual CUDA
+inference still need independent validation on the target machine.
