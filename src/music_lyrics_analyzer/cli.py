@@ -147,16 +147,19 @@ def analyze(args):
                                  language=args.ctc_language,device=ctc_device,
                                  cache_dir=(output.parent/'.cache'/'ctc-emissions')
                                  if args.resume else None)
-                if args.ctc_window_mode == 'phrase':
+                if args.ctc_window_mode in ('phrase','continuous'):
                     from .phrase_recovery import phrase_ctc_recovery
                     recovery_report=phrase_ctc_recovery(
                         ctc,audio16,words,lines,diagnostic.get('sections',[]),
                         threshold=args.ctc_threshold,
-                        score_window=args.ctc_score_window)
+                        score_window=args.ctc_score_window,
+                        mode=args.ctc_window_mode,
+                        commit=args.ctc_window_mode!='continuous')
                     recovered_total=recovery_report['recovered']
                     diagnostic['ctc_summary']={
                         'recovered':recovered_total,
-                        'window_mode':'phrase',
+                        'window_mode':args.ctc_window_mode,
+                        'experimental_only':args.ctc_window_mode=='continuous',
                         'attempts':len(recovery_report['attempts']),
                         'candidate_count':len(recovery_report['candidates']),
                         'resolver_accepted':recovery_report['resolver']['accepted_count'],
@@ -171,6 +174,8 @@ def analyze(args):
                         'language':args.ctc_language,
                         'score_window':args.ctc_score_window,
                         'threshold':args.ctc_threshold,
+                        'mode':args.ctc_window_mode,
+                        'committed':recovery_report['committed'],
                         'audio_sha256':file_hash(music),
                         'model_integrity':ctc.integrity.to_dict(),
                         'candidates':recovery_report['candidates'],
@@ -356,8 +361,8 @@ def main(argv=None):
     p.add_argument('--ctc-language',default='por',help='Adaptador de idioma MMS (Português: por).')
     p.add_argument('--ctc-device',choices=['cpu','cuda','inherit'],default='cpu',
                    help='Dispositivo MMS (padrão: cpu; independente do Whisper).')
-    p.add_argument('--ctc-window-mode',choices=['gap','phrase'],default='phrase',
-                   help='CTC por frase com resolução posterior (padrão) ou lacuna isolada (baseline).')
+    p.add_argument('--ctc-window-mode',choices=['gap','phrase','continuous'],default='phrase',
+                   help='gap: legado; phrase: legado por frases (padrão); continuous: Viterbi experimental sem aplicar timestamps.')
     p.add_argument('--ctc-score-window',type=int,default=2,
                    help='Largura da janela de score do decoder (frames, 1 a 100).')
     p.add_argument('--ctc-threshold',type=float,default=-2.5,help='Limite de score acústico CTC (log-probabilidade); não é confiança calibrada.')
