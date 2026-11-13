@@ -17,12 +17,23 @@ class CUDA:
 def fake_cuda(cuda):
     return SimpleNamespace(cuda=cuda)
 
-def test_cuda_rejects_incompatible_pascal_wheel():
+def test_cuda_rejects_incompatible_major_architecture():
     with pytest.raises(RuntimeError,match="sm_61"):
-        choose_device(fake_cuda(CUDA()),"cuda")
+        choose_device(fake_cuda(CUDA(arches=["sm_75"])),"cuda")
+
+
+def test_pascal_sm60_cubin_works_on_sm61_device():
+    plan=choose_device(fake_cuda(CUDA(arches=["sm_50","sm_60","sm_70"])),"cuda")
+    assert plan.device=="cuda:0"
+    assert plan.capability==(6,1)
+
+
+def test_higher_minor_cubin_is_incompatible():
+    with pytest.raises(RuntimeError,match="sm_60"):
+        choose_device(fake_cuda(CUDA(arch=(6,0),arches=["sm_61"])),"cuda")
 
 def test_auto_falls_back_explicitly_to_cpu():
-    plan=choose_device(fake_cuda(CUDA()),"auto")
+    plan=choose_device(fake_cuda(CUDA(arches=["sm_75"])),"auto")
     assert plan.device=="cpu" and plan.dtype=="float32"
 
 def test_cpu_is_always_available():
