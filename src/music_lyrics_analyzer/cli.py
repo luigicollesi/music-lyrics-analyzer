@@ -132,6 +132,8 @@ def analyze(args):
                 ctc = MMSBackend(model_id=args.ctc_model,
                                  language=args.ctc_language,device=args.device)
                 recovered_total = 0
+                ctc_statuses = {}
+                ctc_samples = []
                 for section in diagnostic.get('sections', []):
                     window = section.get('window')
                     if window is None:
@@ -143,12 +145,32 @@ def analyze(args):
                         start=window[0], end=window[1],
                         threshold=args.ctc_threshold)
                     recovered_total += report['recovered']
+                    for label, number in report.get('attempt_statuses', {}).items():
+                        ctc_statuses[label] = ctc_statuses.get(label, 0) + number
+                    for item in report.get('attempts', []):
+                        if item.get('status') in ('error','no_accepted_candidates',
+                                                  'skipped_window','skipped_too_short'):
+                            if len(ctc_samples) < 8:
+                                ctc_samples.append({
+                                    'word_id': item.get('first_word_id'),
+                                    'status': item.get('status'),
+                                    'detail': item.get('message') or
+                                              item.get('ctc_diagnostic'),
+                                    'window': item.get('window')})
                     diagnostic.setdefault('attempts', []).append({
                         'section_id': section['id'], 'ctc_recovery':report})
                 print(f'  CTC recuperou {recovered_total} palavras candidatas.',file=sys.stderr)
+                print('  CTC status:', ctc_statuses, file=sys.stderr)
+                for sample in ctc_samples:
+                    print('  CTC diagnóstico:', json.dumps(sample,ensure_ascii=False),
+                          file=sys.stderr)
+                diagnostic['ctc_summary'] = {
+                    'recovered': recovered_total, 'statuses': ctc_statuses,
+                    'samples': ctc_samples}
                 method='hybrid-stable-ts-ctc'
-            if unresolved:
-                warnings.append(f'{unresolved} de {len(words)} palavras permanecem sem alinhamento válido.')
+            remaining = sum(w['start'] is None for w in words)
+            if remaining:
+                warnings.append(f'{remaining} de {len(words)} palavras permanecem sem alinhamento válido.')
         elif args.aligner=='ctc':
             print('3/4 Alinhando com CTC em janelas de seções manuais...',file=sys.stderr)
             from .ctc_backend import MMSBackend, recover_ctc_gaps
@@ -233,7 +255,8 @@ def analyze(args):
             'prosody':prosody_summary,
             'diagnostics':{'sections':diagnostic.get('sections',[]),
                            'errors':diagnostic.get('errors',[]),
-                           'attempts':diagnostic.get('attempts',[])},
+                           'attempts':diagnostic.get('attempts',[]),
+                           'ctc_summary':diagnostic.get('ctc_summary')},
             'warnings':warnings}
     output.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     if args.lrc:output.with_suffix('.lrc').write_text(lrc_lines(words),encoding='utf-8')

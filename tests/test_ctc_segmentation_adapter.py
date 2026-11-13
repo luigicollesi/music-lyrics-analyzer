@@ -11,6 +11,9 @@ class FakeTokenizer:
     pad_token_id=0
     unk_token_id=9
 
+    def get_vocab(self):
+        return {"<pad>":0,"h":1,"o":2,"j":3,"e":4,"m":5,"a":6,"n":7,"ã":8,"<unk>":9}
+
     def __call__(self, text, *, add_special_tokens):
         assert add_special_tokens is False
         dictionary={"h":1,"o":2,"j":3,"e":4,"m":5,"a":6,"n":7,"ã":8}
@@ -25,6 +28,8 @@ def fake_package(monkeypatch, spans):
 
     def prepare(config, tokens):
         assert config.blank == 0
+        assert config.char_list[1] == 'h'
+        assert config.char_list[8] == 'ã'
         assert tokens
         return np.array([[0],[1]]), list(range(len(tokens)+1))
 
