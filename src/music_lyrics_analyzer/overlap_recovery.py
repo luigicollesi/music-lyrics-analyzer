@@ -1,4 +1,4 @@
-"""Experimental overlap search; no automatic word-time publication."""
+"""Experimental overlapping CTC with ASR-based missing-line proposals."""
 from __future__ import annotations
 
 from .overlap_windows import anchored_line_windows
@@ -10,10 +10,9 @@ from .asr_line_search import propose_missing_line_locations
 def overlap_ctc_review(backend, audio16, words, lines, *, seconds=8.,
                        hop=4., threshold=-2.5, max_records=10000,
                        asr_segments=None, asr_search=True):
-    """Re-align only anchored whole lines on overlapping audio crops.
+    """Compare anchored lines and independently ASR-localized missing lines.
 
-    This compares timing stability across crop borders. It does NOT discover
-    completely missing lines (that requires independent ASR localization).
+    ASR proposals are tentative; no word-time candidate is committed.
     """
     plans,skipped=anchored_line_windows(
         words,lines,start=0.,end=len(audio16)/16000,
