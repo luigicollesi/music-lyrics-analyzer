@@ -613,3 +613,21 @@ Ti. The mode is opt-in and has not been validated on the target GPU.
 If the resident map cannot keep weights in CUDA, the summary shows
 zero CUDA modules; do not claim acceleration. For CPU-only hosts
 continue using `--qwen-device streamed` (automatically falls back to CPU).
+
+## Diagnose resident Qwen weight placement before decoding
+
+Add `--qwen-placement-audit` to `--qwen-mode full --qwen-device
+resident` to emit a machine-readable `[Qwen placement]` line
+immediately after model loading (before the 332-second transcription).
+The audit sums effective assigned parameter bytes using the longest
+matching `hf_device_map` prefix, removes duplicates for tied weights,
+and prints CPU/CUDA totals, decoder module counts and large CPU
+modules. It never reads offloaded parameter values, so meta tensors
+remain untouched. The summary is persisted in transcript diagnostics
+after successful inference. Byte totals reflect tensor storage, not
+allocator overhead or intermediate activations.
+
+The audit is an **observation only**. It does not yet change the device
+map, generate a custom map, or eliminate the decoder offloading
+bottleneck. Run with `--qwen-transfer-report` to correlate both
+diagnostics. Do not infer GPU residency solely from a budget flag.
