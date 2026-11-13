@@ -38,7 +38,20 @@ def choose_device(torch, requested="cuda", *, minimum_vram_gb=0.):
     supported_arches=(torch.cuda.get_arch_list()
                        if hasattr(torch.cuda,"get_arch_list") else [])
     arch=f"sm_{major}{minor}"
-    if supported_arches and arch not in supported_arches:
+    # NVIDIA cubins are forward-compatible within the same major
+    # compute capability: sm_60 can execute on Pascal sm_61.
+    # A higher minor target (sm_61 on sm_60) is NOT compatible.
+    built=[]
+    for entry in supported_arches:
+        if not entry.startswith("sm_"):
+            continue
+        digits=entry[3:]
+        if digits.isdigit() and len(digits)>=2:
+            built_major=int(digits[:-1])
+            built_minor=int(digits[-1])
+            built.append((built_major,built_minor))
+    compatible=any(m==major and n<=minor for m,n in built)
+    if supported_arches and not compatible:
         msg=(f"GPU {name} ({arch}) não suportada pelos kernels do PyTorch "
              f"instalado ({', '.join(supported_arches)}). "
              "Instale uma versão com suporte a essa arquitetura ou use CPU.")
