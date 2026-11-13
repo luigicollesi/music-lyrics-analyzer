@@ -139,7 +139,8 @@ def analyze(args):
                             minimum_vram_gb=args.qwen_min_vram_gb,
                             gpu_memory_gb=args.qwen_gpu_memory_gb,
                             cpu_memory_gb=args.qwen_cpu_memory_gb,
-                            memory_report=args.qwen_memory_report)
+                            memory_report=args.qwen_memory_report,
+                            encoder_memory_trace=args.qwen_encoder_memory_trace)
                         if qwen_cache:
                             qwen_cache.parent.mkdir(parents=True,exist_ok=True)
                             qwen_cache.write_text(json.dumps(qwen_full,ensure_ascii=False,indent=2),
@@ -473,6 +474,8 @@ def main(argv=None):
                    help='Dispositivo Qwen, CUDA explícito por padrão quando selecionado.')
     p.add_argument('--qwen-chunk-seconds',type=float,default=16.,
                    help='Duração da janela de transcrição Qwen (sobreposição 50%%).')
+    p.add_argument('--qwen-encoder-memory-trace',action='store_true',
+                   help='Rastrear pico de VRAM no encoder de áudio Qwen e em suas camadas.')
     p.add_argument('--qwen-memory-report',action='store_true',
                    help='Registrar checkpoints de consumo CPU/CUDA na inferência full.')
     p.add_argument('--qwen-gpu-memory-gb',type=float,default=2.5,

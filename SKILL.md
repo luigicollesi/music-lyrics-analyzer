@@ -507,3 +507,26 @@ activation and generation managers currently document unchanged policies.
 The Qwen input device proxy is still experimental. Future audio-encoder
 changes must prove semantic equivalence before publication. A successful
 offline test suite does not validate a 332-second GPU run.
+
+## Phase 2: Audio encoder VRAM profiling
+
+For Qwen's `--qwen-mode full`, add `--qwen-memory-report
+--qwen-encoder-memory-trace`. This attaches temporary read-only forward
+hooks to the Qwen audio tower and its layers, sampling CUDA allocated,
+reserved and peak allocated MiB before/after each module forward.
+Hooks are removed even on exceptions, and events are capped at 160.
+When CUDA OOM occurs, sampled trace events are appended to the error.
+If no known encoder module is discovered, the trace explicitly reports
+`audio_encoder_not_found` rather than inventing measurements.
+Successful full transcripts contain the trace under
+`diagnostics.qwen_asr.transcript.encoder_memory_trace`.
+
+**Limitations:** CPU and GPU operations can be asynchronous; samples are
+not a kernel-level memory allocation trace. They may miss a transient
+allocation that fails inside a layer; in that case compare the last
+pre-forward sample with CUDA OOM allocation size and run a targeted
+PyTorch memory snapshot. The profiler does not change Qwen architecture,
+activations, attention implementation or language-model KV cache.
+
+Example using 332s audio: add `--qwen-encoder-memory-trace` to the
+existing `--qwen-mode full --qwen-device streamed` command.
