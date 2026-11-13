@@ -168,6 +168,8 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
         MODELS[model_size],dtype=dtype,**placement,
         max_inference_batch_size=1,max_new_tokens=max_new_tokens)
     device_map=getattr(model.model,"hf_device_map",None)
+    if plan.device.startswith("cuda"):
+        torch.cuda.reset_peak_memory_stats(0)
     try:
         result=model.transcribe(audio=(samples,16000),language=language)
     except torch.cuda.OutOfMemoryError as exc:
@@ -185,6 +187,8 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
         "gpu_memory_budget_gb":gpu_memory_gb if device=="hybrid" else None,
         "cpu_memory_budget_gb":cpu_memory_gb if device=="hybrid" else None,
         "device_map":device_map,
+        "peak_gpu_allocated_gb":round(torch.cuda.max_memory_allocated(0)/1024**3,3)
+            if plan.device.startswith("cuda") else None,
         "max_new_tokens":max_new_tokens,
         "word_count":len(text.split()),
         "token_limit_risk":len(text.split()) >= max_new_tokens//3,
