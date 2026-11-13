@@ -78,3 +78,18 @@ def test_rejects_wrong_blank_symbol(monkeypatch):
     with pytest.raises(ValueError):
         segment_emissions(np.zeros((40,10)),
                           [{"id":"w1","text":"Hoje"}],t,duration=2.)
+
+
+def test_keeps_rejected_candidates_for_offline_audit(monkeypatch):
+    fake_package(monkeypatch,[(.2,.5,-4.0),(.6,.9,-.5)])
+    records={}
+    words=[{"id":"w1","text":"Hoje"},{"id":"w2","text":"mãe"}]
+    good=segment_emissions(np.zeros((40,10)),words,FakeTokenizer(),
+                           duration=2.,threshold=-2.5,score_window=10,
+                           diagnostic=records)
+    assert len(good)==1
+    assert records["score_window"]==10
+    assert len(records["candidate_records"])==2
+    assert records["candidate_records"][0]["status"]=="rejected"
+    assert records["candidate_records"][0]["rejection_reason"]=="low_score"
+    assert records["candidate_records"][1]["status"]=="candidate"
