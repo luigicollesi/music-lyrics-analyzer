@@ -166,6 +166,7 @@ class MMSBackend:
         self.model_id=model_id
         self.language=language
         self.cache_dir=Path(cache_dir) if cache_dir else None
+        self._recent_emissions = {}
         if self.cache_dir:
             self.cache_dir.mkdir(parents=True,exist_ok=True)
         self.processor = AutoProcessor.from_pretrained(
@@ -188,6 +189,14 @@ class MMSBackend:
     def infer(self, audio16: np.ndarray) -> np.ndarray:
         torch = self.torch
         samples=np.ascontiguousarray(audio16,dtype=np.float32)
+        # Lightweight per-process LRU for the same crop used by several
+        # phrase hypotheses. This avoids another full MMS forward pass even
+        # when the persistent --resume cache is disabled.
+        memory_key=sha256(samples.tobytes()).hexdigest()
+        if memory_key in self._recent_emissions:
+            cached=self._recent_emissions.pop(memory_key)
+            self._recent_emissions[memory_key]=cached
+            return cached
         path=None
         if self.cache_dir:
             from transformers import __version__ as transformers_version
@@ -201,6 +210,9 @@ class MMSBackend:
                 try:
                     cached=np.load(path,allow_pickle=False)
                     if cached.ndim==2 and cached.shape[1]==self.model.lm_head.out_features:
+                        self._recent_emissions[memory_key]=cached
+                        if len(self._recent_emissions)>4:
+                            del self._recent_emissions[next(iter(self._recent_emissions))]
                         return cached
                 except (OSError,ValueError):
                     pass
@@ -220,6 +232,9 @@ class MMSBackend:
                 os.replace(tmp,path)
             finally:
                 if os.path.exists(tmp):os.unlink(tmp)
+        self._recent_emissions[memory_key]=result
+        if len(self._recent_emissions)>4:
+            del self._recent_emissions[next(iter(self._recent_emissions))]
         return result
 
     def align(self, audio16, words, start, end, *, threshold=-2.5,

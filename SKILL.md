@@ -271,3 +271,32 @@ cannot guarantee either valid word timings or correct section placement.
 The `continuous` mode remains comparison-only, never committing
 timestamps automatically. Continue to assess word timing and vocal
 intonation as separate goals.
+
+## V1 PR4b — overlapping CTC review (experimental)
+
+Use `--ctc-window-mode overlap --ctc-overlap-seconds 8 --ctc-overlap-hop 4`
+to compare candidate word boundaries using overlapping acoustic windows.
+The mode selects **only** occurrence-specific lyric lines with at least
+two pre-existing word anchors in a crop that contains their entire timed
+span away from both crop edges. A line with no trusted localization is
+marked `insufficient_independent_anchors`; do **not** force its lyrics
+against arbitrary audio or confuse repetition with independent evidence.
+The method currently checks crop stability, **not** whether a phrase is
+present: independent ASR localization for fully missing lines is future
+work.
+
+The decoder uses the existing continuous Viterbi, and a bounded
+four-entry in-process emission cache avoids repeat MMS inference
+for repeated crops, even without `--resume`. Timing hypotheses are
+reported per original occurrence and are **never committed**.
+Read `stability` and `phrase_conflicts` in the candidate report.
+Multiple agreeing crops from one checkpoint are not independent acoustic
+confirmations. Verify improvements with manually marked song timestamps.
+
+```bash
+python analise.py --music-path "song.wav" --lyrics-path "lyrics.md" \
+  --aligner hybrid --strategy hierarchical --ctc-window-mode overlap \
+  --ctc-overlap-seconds 8 --ctc-overlap-hop 4 \
+  --ctc-device cpu --resume --report \
+  --output analysis/overlap-review.json
+```

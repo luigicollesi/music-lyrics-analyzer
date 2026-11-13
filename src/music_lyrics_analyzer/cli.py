@@ -147,19 +147,28 @@ def analyze(args):
                                  language=args.ctc_language,device=ctc_device,
                                  cache_dir=(output.parent/'.cache'/'ctc-emissions')
                                  if args.resume else None)
-                if args.ctc_window_mode in ('phrase','continuous'):
-                    from .phrase_recovery import phrase_ctc_recovery
-                    recovery_report=phrase_ctc_recovery(
-                        ctc,audio16,words,lines,diagnostic.get('sections',[]),
-                        threshold=args.ctc_threshold,
-                        score_window=args.ctc_score_window,
-                        mode=args.ctc_window_mode,
-                        commit=args.ctc_window_mode!='continuous')
+                if args.ctc_window_mode in ('phrase','continuous','overlap'):
+                    if args.ctc_window_mode=='overlap':
+                        from .overlap_recovery import overlap_ctc_review
+                        recovery_report=overlap_ctc_review(
+                            ctc,audio16,words,lines,
+                            seconds=args.ctc_overlap_seconds,
+                            hop=args.ctc_overlap_hop,
+                            threshold=args.ctc_threshold)
+                    else:
+                        from .phrase_recovery import phrase_ctc_recovery
+                        recovery_report=phrase_ctc_recovery(
+                            ctc,audio16,words,lines,diagnostic.get('sections',[]),
+                            threshold=args.ctc_threshold,
+                            score_window=args.ctc_score_window,
+                            mode=args.ctc_window_mode,
+                            commit=args.ctc_window_mode=='phrase')
                     recovered_total=recovery_report['recovered']
                     diagnostic['ctc_summary']={
                         'recovered':recovered_total,
                         'window_mode':args.ctc_window_mode,
-                        'experimental_only':args.ctc_window_mode=='continuous',
+                        'experimental_only':args.ctc_window_mode in ('continuous','overlap'),
+                        'stability':recovery_report.get('stability',[]),
                         'attempts':len(recovery_report['attempts']),
                         'candidate_count':len(recovery_report['candidates']),
                         'resolver_accepted':recovery_report['resolver']['accepted_count'],
@@ -176,6 +185,7 @@ def analyze(args):
                         'score_window':args.ctc_score_window,
                         'threshold':args.ctc_threshold,
                         'mode':args.ctc_window_mode,
+                        'stability':recovery_report.get('stability',[]),
                         'committed':recovery_report['committed'],
                         'audio_sha256':file_hash(music),
                         'model_integrity':ctc.integrity.to_dict(),
@@ -363,8 +373,12 @@ def main(argv=None):
     p.add_argument('--ctc-language',default='por',help='Adaptador de idioma MMS (Português: por).')
     p.add_argument('--ctc-device',choices=['cpu','cuda','inherit'],default='cpu',
                    help='Dispositivo MMS (padrão: cpu; independente do Whisper).')
-    p.add_argument('--ctc-window-mode',choices=['gap','phrase','continuous'],default='phrase',
-                   help='gap: legado; phrase: legado por frases (padrão); continuous: Viterbi experimental sem aplicar timestamps.')
+    p.add_argument('--ctc-window-mode',choices=['gap','phrase','continuous','overlap'],default='phrase',
+                   help='gap/phrase: legado; continuous: Viterbi; overlap: revisão com janelas sobrepostas; ambos experimentais.')
+    p.add_argument('--ctc-overlap-seconds',type=float,default=8.,
+                   help='Duração das janelas acústicas de revisão overlap (padrão: 8s).')
+    p.add_argument('--ctc-overlap-hop',type=float,default=4.,
+                   help='Avanço entre janelas overlap (padrão: 4s).')
     p.add_argument('--ctc-score-window',type=int,default=2,
                    help='Largura da janela de score do decoder (frames, 1 a 100).')
     p.add_argument('--ctc-threshold',type=float,default=-2.5,help='Limite de score acústico CTC (log-probabilidade); não é confiança calibrada.')
