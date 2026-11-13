@@ -78,4 +78,5 @@ def phrase_ctc_recovery(backend, audio16, words, lines, sections, *,
             "attempts":attempts,
             "candidates":all_candidates,
             "resolver":{"accepted_count":solution["accepted_count"],
-                        "decisions":solution["decisions"]}}
+                        "decisions":solution["decisions"],
+                        "candidate_decisions":solution["candidate_decisions"]}}
