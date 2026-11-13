@@ -1,6 +1,6 @@
 ---
 name: music-lyrics-analyzer
-description: Analyze local song audio with supplied lyrics to estimate BPM, align each sung word and report relative acoustic intensity for AI video timing.
+description: Analyze local music with authoritative lyrics to estimate each sung word's timing and measurable vocal delivery (F0, melodic movement, dynamics), with uncertainty for AI video synchronization.
 license: MIT
 ---
 
@@ -80,3 +80,92 @@ Use `--aligner hybrid --strategy hierarchical` to run the regular stable-ts alig
 The CTC backend produces grapheme-token timing hypotheses, not verified phoneme boundaries; it cannot prove that the lyric was sung. Every `ctc-mms` word is tagged `alignment.status=tentative`; do not treat its model score as calibrated confidence. The model has high memory requirements and its default checkpoint has a noncommercial license. Optional source separation must preserve the original timeline.
 
 After each run compare outputs using `python benchmark_compare.py baseline.json candidate.json`; review newly timed words, lost timings and error in a human-annotated reference sample before enabling frame-exact animation. No automatic merge to main.
+
+## V1 foundation — primary goal and integrity gates (experimental)
+
+**User goal:** Given a local music recording and an authoritative lyric file,
+produce the actual onset and offset of **each occurrence** of a sung word,
+plus measurable aspects of **how** it is sung: F0, melodic trend, voicing,
+relative intensity, duration and vocal attack when supported by the audio.
+Maintain an explicit distinction between acoustic measurements and
+interpretations such as emotion, breathiness, falsetto or shouting.
+
+### Mandatory analysis order
+
+1. Preserve the original audio and lyric occurrence IDs. Parse sections and
+   lines, preserving repetitions. Headers and metadata are never sung.
+2. Inspect model integrity and identity before relying on MMS outputs:
+   checkpoint, target language `por`, language-specific tokenizer indices,
+   CTC blank ID, output-head dimensions and adapter loading path.
+   Structural compatibility **does not establish** that the trained
+   Portuguese head was restored or that the model works on singing.
+3. Validate MMS inference separately using a short, known Portuguese spoken
+   utterance and a sung phrase; compare decoded tokens/transcript against
+   the expected text. The warning about a newly initialized mismatched
+   `lm_head` can occur in documented language-adapter workflows and alone
+   is **not proof** of an untrained Portuguese model.
+4. Localize sections and phrases using the original audio, ASR as
+   auxiliary evidence and preserved lyric IDs. Never invent times from BPM.
+   A crop must have enough emitted CTC frames for its complete token
+   reference; a line with no timed words must not be forced into the
+   zero-length gap at its neighboring anchor.
+5. Compare word-level/phrase-level CTC hypotheses as **tentative** data.
+   The V0.6 `phrase` mode still delegates word boundaries to
+   `determine_utterance_segments`; it is **not** a validated continuous
+   token-level word aligner. Do not call it one in a report. Avoid
+   confusing CTC acoustic scores with calibrated probabilities.
+6. Validate temporal order, boundary accuracy and utterance occurrence.
+   Unresolved words remain explicitly unresolved; no guessed
+   timestamps, extrapolation from beats or silent conflict suppression.
+7. Measure F0 and dynamics on sustained vocal context, preferably using
+   a verified time-aligned vocals stem. Associate these frame-level
+   measurements with aligned words, preserving null for insufficient
+   voiced frames or an untrusted timestamp.
+8. Export JSON, optional LRC and diagnostics from the same finalized
+   timeline. Verify each JSON with a strict parser; compare the LRC
+   entry count with timed words and flag unresolved/conflicted regions.
+9. Benchmark against hand-labeled word onset/offset and, separately,
+   pitch contours/voicing. Coverage alone is not a quality guarantee.
+
+### Commands currently supported
+
+```bash
+# Legacy/baseline alignment plus optional experimental CTC gap/phrase recovery
+python analise.py --music-path "song.wav" --lyrics-path "lyrics.md" \
+  --aligner hybrid --strategy hierarchical --ctc-language por \
+  --ctc-window-mode phrase --ctc-score-window 2 --ctc-device cpu \
+  --device cpu --resume --report --lrc --output analysis/result.json
+
+# Analyze measured F0/intensity after timing is available.
+python analise.py --music-path "song.wav" --lyrics-path "lyrics.md" \
+  --aligner stable-ts --strategy hierarchical \
+  --prosody pyin --pitch-contour --vocals-path "vocals.wav" \
+  --report --output analysis/prosody.json
+```
+
+The hybrid phrase mode records a `*-ctc-candidates.json` audit file.
+Read its rejection reasons, `resolver.candidate_decisions` and
+`model_integrity`; review `diagnostics.timeline_issues` in the main JSON.
+The integrity field means **structural audit**, not transcript accuracy.
+Run a strict JSON parse on every generated candidate file. Never publish
+frame-accurate word VFX on the basis of tentative CTC candidates alone.
+
+### Roadmap — not yet implemented
+
+The future V1 continuous decoder must: tokenize the entire phrase with an
+exact token-to-original-word map; align the continuous CTC sequence using
+an auditable dynamic program; handle blank frames without treating pauses
+as sustained vowels; compare against the legacy decoder on audio with
+manual references; and support abstention before publishing word times.
+A future vocal module should separate F0/dynamics from speculative emotion
+or technique labels, retain voicing probabilities and use distinct confidence
+metrics for timing and pitch. Do not describe these capabilities as present
+until implemented and benchmarked.
+
+### Model licenses and reproducibility
+
+The source repository uses MIT; `facebook/mms-1b-all` model weights use a
+noncommercial license. Record model revision or content digest, dependency
+versions and audio hash in production manifests. Running with `--resume`
+does not by itself prove that a cache entry is valid for a changed model
+revision. Do not modify or upload private audio without authorization.
