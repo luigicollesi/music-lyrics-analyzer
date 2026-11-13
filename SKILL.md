@@ -212,3 +212,34 @@ full songs. It downloads the checkpoint on first use, and does not
 upload local audio. Never run this benchmark on an arbitrary track
 with unrelated expected text. A low WER on speech alone does not
 establish singing performance.
+
+## V1 PR3 — continuous CTC Viterbi experimental comparison
+
+The `--ctc-window-mode continuous` option now runs a true monotonic CTC
+Viterbi path on the **whole phrase token sequence**. Token IDs are mapped
+back to occurrence-specific lyric word IDs; delimiter tokens are not
+assigned to words. Consecutive identical tokens require a separating CTC
+blank. The decoder stores one byte per time/state backpointer and only
+two floating-point DP rows, improving memory usage on CPU.
+
+```bash
+python analise.py --music-path "song.wav" --lyrics-path "lyrics.md" \
+  --aligner hybrid --strategy hierarchical \
+  --ctc-window-mode continuous --ctc-device cpu \
+  --resume --report --lrc --output analysis/continuous-review.json
+```
+
+**The continuous mode is comparison-only.** It records acoustic hypotheses
+in `*-ctc-candidates.json` and reports `experimental_only: true` in
+`diagnostics.ctc_summary`, but does NOT overwrite the stable-ts baseline.
+Scores are mean token-emission log probabilities, **not comparable** to
+legacy `ctc-segmentation` scores, nor calibrated confidence. Separate
+human validation and a consistent evaluation set are required before any
+new timing can become accepted.
+
+The first/last emitted token frames define a candidate interval; long
+internal blanks are not evidence that a vowel was sustained. Blank-frame
+refinement, acoustic boundary calibration, global soft-anchor selection,
+and per-word melodic/vocal metrics improvements remain future work.
+Use `--prosody pyin` for the current independent vocal-pitch baseline,
+preferably with a synchronized vocal stem.

@@ -257,6 +257,28 @@ class MMSBackend:
                                  diagnostic=self.last_diagnostic)
 
 
+    def align_continuous(self, audio16, words, start, end, *,
+                         threshold=-2.5, score_window=2):
+        """Generate continuous CTC evidence, without committing word times."""
+        from .ctc_continuous import align_continuous_emissions
+        self.last_diagnostic = {}
+        if not 0 <= start < end <= len(audio16)/16000 + .001:
+            self.last_diagnostic = {"status":"invalid_window"}
+            return []
+        if end-start>20.:
+            self.last_diagnostic = {"status":"too_long_window"}
+            return []
+        samples=audio16[max(0,int(start*16000)):min(len(audio16),int(end*16000))]
+        if len(samples)<3200:
+            self.last_diagnostic={"status":"too_short_audio"}
+            return []
+        emission=self.infer(samples)
+        return align_continuous_emissions(
+            emission,words,self.processor.tokenizer,
+            duration=len(samples)/16000,offset=start,
+            threshold=threshold,diagnostic=self.last_diagnostic)
+
+
 def recover_ctc_gaps(backend, audio16, words: list[dict],
                      *, start: float, end: float,
                      max_gap_seconds: float = 20.,

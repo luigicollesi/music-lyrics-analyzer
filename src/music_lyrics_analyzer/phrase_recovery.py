@@ -6,7 +6,7 @@ from .candidate_resolver import resolve_candidates, commit_resolved
 
 def phrase_ctc_recovery(backend, audio16, words, lines, sections, *,
                         threshold=-2.5, score_window=2,
-                        max_records=10000):
+                        max_records=10000, mode="phrase", commit=True):
     """Analyze complete lyric lines using section-local acoustic evidence.
 
     Existing timestamps remain immutable while CTC candidates are generated.
@@ -55,13 +55,23 @@ def phrase_ctc_recovery(backend, audio16, words, lines, sections, *,
                    "word_ids":[w["id"] for w in selected],
                    "unresolved_ids":list(window.unresolved_ids)}
             try:
-                backend.align(audio16, selected, window.start,window.end,
-                              threshold=threshold,score_window=score_window)
+                if mode == "continuous":
+                    backend.align_continuous(
+                        audio16, selected, window.start, window.end,
+                        threshold=threshold,score_window=score_window)
+                else:
+                    backend.align(audio16, selected, window.start,window.end,
+                                  threshold=threshold,score_window=score_window)
                 diagnostic=getattr(backend,"last_diagnostic",{})
                 records=diagnostic.get("candidate_records",[])
                 entry["status"]=diagnostic.get("status","unknown")
                 entry["rejections"]=diagnostic.get("rejected",{})
                 entry["candidates"]=len(records)
+                if mode=="continuous" and diagnostic.get("token_spans") is not None:
+                    entry["token_spans"]=diagnostic["token_spans"]
+                    entry["blank_frame_ratio"]=diagnostic.get("blank_frame_ratio")
+                    entry["frame_duration"]=diagnostic.get("frame_duration")
+                    entry["total_path_logprob"]=diagnostic.get("total_path_logprob")
                 if diagnostic.get("continuous_reference") is not None:
                     ref=diagnostic["continuous_reference"]
                     entry["continuous_reference"]={
@@ -88,8 +98,8 @@ def phrase_ctc_recovery(backend, audio16, words, lines, sections, *,
                 entry["error"]=str(exc)[:350]
             attempts.append(entry)
     solution=resolve_candidates(words,all_candidates)
-    count=commit_resolved(words,solution)
-    return {"recovered":count,
+    count=commit_resolved(words,solution) if commit else 0
+    return {"recovered":count,"mode":mode,"committed":commit,
             "attempts":attempts,
             "candidates":all_candidates,
             "resolver":{"accepted_count":solution["accepted_count"],

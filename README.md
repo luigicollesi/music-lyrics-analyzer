@@ -1,3 +1,29 @@
+## PR3: CTC contínuo por frames (experimental)
+
+O novo modo `--ctc-window-mode continuous` usa um decodificador Viterbi
+monotônico, respeitando o token `blank`, tokens repetidos e o mapa
+exato token→ocorrência de palavra. O processo reutiliza as emissões MMS
+em cache quando `--resume` está ativo e armazena somente duas linhas
+de scores, com backpointers compactados em 1 byte por estado/frame.
+
+```bash
+python analise.py --music-path "song.wav" --lyrics-path "lyrics.md" \
+  --aligner hybrid --strategy hierarchical --ctc-window-mode continuous \
+  --ctc-device cpu --device cpu --resume --report --lrc \
+  --output analysis/continuous-review.json
+```
+
+**Segurança experimental:** o novo modo gera o arquivo
+`continuous-review-ctc-candidates.json` e auditorias de
+`token_spans`, `blank_frame_ratio` e `total_path_logprob` nos
+diagnósticos, mas **não aplica os candidatos à timeline**. A cobertura
+exibida continua refletindo apenas o alinhamento preexistente.
+O score de token Viterbi não é a mesma métrica da segmentação legada,
+não é probabilidade calibrada e não demonstra, por si só, que a palavra
+foi cantada corretamente. A qualidade precisa ser medida contra
+anotações humanas de início/fim das palavras. Medições de entonação
+continuam disponíveis pelo modo independente `--prosody pyin`.
+
 ## V0.6 experimental — janelas CTC por frases e candidatos auditáveis
 
 A execução híbrida agora oferece **dois modos** de recuperação acústica:
