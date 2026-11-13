@@ -116,39 +116,61 @@ def analyze(args):
                     asr_segments=json.loads(cache_file.read_text(encoding='utf-8'))
                     print('  Reconhecimento auxiliar recuperado do cache.',file=sys.stderr)
             qwen_segments=[]
+            qwen_full=None
             if args.asr_backend=='qwen' and manual_sections is None:
-                # The Qwen backend returns full overlapping *crop* intervals,
-                # not speech-segment timestamps. They cannot replace Whisper's
-                # short temporal anchors for hierarchical alignment.
-                qwen_cache=None
-                if args.resume and not args.asr_segments:
-                    key=sha256((file_hash(vocal_audio)+args.qwen_model+
-                                str(args.qwen_chunk_seconds)+'qwen-chunks-v1').encode()).hexdigest()[:20]
-                    qwen_cache=output.parent/'.cache'/f'qwen-{key}.json'
-                if qwen_cache and qwen_cache.is_file():
-                    qwen_segments=json.loads(qwen_cache.read_text(encoding='utf-8'))
-                    print('  Qwen ASR recuperado do cache.',file=sys.stderr)
+                if args.qwen_mode=='full':
+                    qwen_cache=None
+                    if args.resume:
+                        key=sha256((file_hash(vocal_audio)+args.qwen_model+
+                                    args.qwen_device+str(args.qwen_max_new_tokens)+
+                                    'qwen-full-v1').encode()).hexdigest()[:20]
+                        qwen_cache=output.parent/'.cache'/f'qwen-full-{key}.json'
+                    if qwen_cache and qwen_cache.is_file():
+                        qwen_full=json.loads(qwen_cache.read_text(encoding='utf-8'))
+                        print('  Transcrição Qwen integral recuperada do cache.',file=sys.stderr)
+                    else:
+                        from .qwen_backend import transcribe_qwen_full
+                        print('  Transcrevendo música inteira com Qwen3-ASR...',file=sys.stderr)
+                        qwen_full,_=transcribe_qwen_full(
+                            audio16,model_size=args.qwen_model,
+                            device=args.qwen_device,
+                            max_new_tokens=args.qwen_max_new_tokens,
+                            minimum_vram_gb=args.qwen_min_vram_gb)
+                        if qwen_cache:
+                            qwen_cache.parent.mkdir(parents=True,exist_ok=True)
+                            qwen_cache.write_text(json.dumps(qwen_full,ensure_ascii=False,indent=2),
+                                                  encoding='utf-8')
+                    diagnostic['qwen_asr']={
+                        'model':args.qwen_model,'mode':'full',
+                        'role':'full_text_diagnostic_not_timing_anchor',
+                        'transcript':qwen_full}
                 else:
-                    from .qwen_backend import transcribe_qwen_windows,MODELS
-                    print('  Executando Qwen3-ASR para evidência textual...',file=sys.stderr)
-                    qwen_segments, qwen_plan=transcribe_qwen_windows(
-                        audio16,model_size=args.qwen_model,
-                        device=args.qwen_device,
-                        chunk_seconds=args.qwen_chunk_seconds,
-                        hop_seconds=args.qwen_chunk_seconds/2,
-                        minimum_vram_gb=args.qwen_min_vram_gb)
-                    if qwen_cache:
-                        qwen_cache.parent.mkdir(parents=True,exist_ok=True)
-                        qwen_cache.write_text(json.dumps(qwen_segments,ensure_ascii=False),
-                                              encoding='utf-8')
-                diagnostic['qwen_asr']={
-                    'model':args.qwen_model,
-                    'segments':len(qwen_segments),
-                    'temporal_precision':'chunk_only',
-                    'role':'supplemental_text_not_timing_anchor'}
-                # Independent ASR with short speech-segment intervals is still
-                # required to establish section windows. Reuse supplied cache
-                # only when it contains Whisper rather than Qwen coarse crops.
+                    qwen_cache=None
+                    if args.resume:
+                        key=sha256((file_hash(vocal_audio)+args.qwen_model+
+                                    str(args.qwen_chunk_seconds)+'qwen-chunks-v1').encode()).hexdigest()[:20]
+                        qwen_cache=output.parent/'.cache'/f'qwen-{key}.json'
+                    if qwen_cache and qwen_cache.is_file():
+                        qwen_segments=json.loads(qwen_cache.read_text(encoding='utf-8'))
+                        print('  Qwen ASR por janelas recuperado do cache.',file=sys.stderr)
+                    else:
+                        from .qwen_backend import transcribe_qwen_windows
+                        print('  Executando Qwen3-ASR por janelas...',file=sys.stderr)
+                        qwen_segments,_=transcribe_qwen_windows(
+                            audio16,model_size=args.qwen_model,
+                            device=args.qwen_device,
+                            chunk_seconds=args.qwen_chunk_seconds,
+                            hop_seconds=args.qwen_chunk_seconds/2,
+                            minimum_vram_gb=args.qwen_min_vram_gb)
+                        if qwen_cache:
+                            qwen_cache.parent.mkdir(parents=True,exist_ok=True)
+                            qwen_cache.write_text(json.dumps(qwen_segments,ensure_ascii=False),
+                                                  encoding='utf-8')
+                    diagnostic['qwen_asr']={
+                        'model':args.qwen_model,'mode':'windowed',
+                        'segments':len(qwen_segments),
+                        'temporal_precision':'chunk_only',
+                        'role':'supplemental_text_not_timing_anchor'}
                 if not args.asr_segments:
                     from .hierarchical import recognition_windows
                     asr_segments=recognition_windows(
@@ -168,7 +190,8 @@ def analyze(args):
                                                  ensure_ascii=False),encoding='utf-8')
             if qwen_diagnostic is not None:
                 diagnostic['qwen_asr']=qwen_diagnostic
-                diagnostic['qwen_asr']['examples']=qwen_segments[:12]
+                if args.qwen_mode=='windowed':
+                    diagnostic['qwen_asr']['examples']=qwen_segments[:12]
             method='stable-ts-hierarchical'
             unresolved=sum(w['start'] is None for w in words)
             if args.aligner == 'hybrid':
@@ -434,6 +457,10 @@ def main(argv=None):
                    help='Localização hierárquica (padrão) ou alinhamento global anterior.')
     p.add_argument('--asr-backend',choices=['whisper','qwen'],
                    default='whisper',help='Reconhecimento auxiliar para localizar seções.')
+    p.add_argument('--qwen-mode',choices=['full','windowed'],default='full',
+                   help='Transcrição integral (padrão) ou janelas legadas.')
+    p.add_argument('--qwen-max-new-tokens',type=int,default=2048,
+                   help='Orçamento de tokens da transcrição integral.')
     p.add_argument('--qwen-model',choices=['0.6b','1.7b'],default='0.6b',
                    help='Modelo Qwen3-ASR opcional; 1.7b exige mais memória.')
     p.add_argument('--qwen-device',choices=['cuda','cpu','auto'],default='cuda',
