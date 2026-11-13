@@ -79,3 +79,27 @@ def test_zero_duration_section_fails_open():
     windows,issues=plan_phrase_windows(words,lines,section_start=1,section_end=1)
     assert windows==[]
     assert issues[0]["reason"]=="invalid_section_window"
+
+
+def test_fully_missing_line_is_not_forced_into_subsecond_crop():
+    words,lines=parse_lyrics(
+        "[Verse]\nEspinhos rasgam minha pele mal consigo enxergar\n"
+        "Três feras fecham a trilha")
+    # First line has 7 unresolved words. The first verified word in
+    # the next line begins at 26.73s.
+    words[7].update(start=26.73,end=27.02)
+    windows,issues=plan_phrase_windows(words,lines,
+                                      section_start=23.27,section_end=31.)
+    assert not issues
+    first=next(w for w in windows if w.id=="phrase-"+lines[0]["id"])
+    assert first.end-first.start>=2.5
+    assert first.start>=23.27
+
+
+def test_missing_line_reports_insufficient_section_boundaries():
+    words,lines=parse_lyrics(
+        "[Verse]\nEspinhos rasgam minha pele mal consigo enxergar")
+    windows,issues=plan_phrase_windows(words,lines,
+                                      section_start=26.73,section_end=27.57)
+    assert windows==[]
+    assert issues[0]["reason"]=="insufficient_section_context"
