@@ -558,3 +558,26 @@ measure end-to-end throughput and CUDA peak. This stage does not yet
 resolve the Transformers `meta` device warning, activation OOM, or
 provide a resident-weight scheduler. Use the default tensor strategy
 if `layer` fails. Both settings have isolated cache keys.
+
+## Weight-transfer bottleneck tracing (experimental)
+
+Enable `--qwen-transfer-report` together with `--qwen-mode full
+--qwen-device streamed` to print an opt-in progress line every
+1000 Accelerate weight-materialization calls. The report includes
+`calls`, `estimated_gib`, and `host_seconds`. It records host
+execution duration, **not** actual synchronized PCIe bandwidth or CUDA
+kernel time; it estimates bytes only when an explicit tensor value
+argument is available. All profiler patches are restored in `finally`.
+Results appear under `diagnostics.qwen_asr.transcript.transfer_report`,
+or are appended to CUDA OOM errors.
+
+`preload_module_classes` from the previous experimental `layer`
+option is documented by Accelerate for modules accessing registered
+weights without calling their submodule forward. It should **not**
+be interpreted as a general, persistent decoder-layer residency
+scheduler, and may increase instantaneous VRAM use. Prefer
+`--qwen-offload-granularity tensor` for baseline measurements.
+Do not enable a resident/prefetch scheduler without tests proving
+correct weight lifetimes and peak CUDA memory.
+
+Example additional flag: `--qwen-transfer-report`.
