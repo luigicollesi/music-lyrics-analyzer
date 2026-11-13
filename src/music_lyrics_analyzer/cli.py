@@ -127,6 +127,7 @@ def analyze(args):
                                     args.qwen_offload_granularity+
                                     str(args.qwen_resident_weights_gib)+
                                     str(args.qwen_activation_reserve_gib)+
+                                    args.qwen_placement_strategy+
                                     'qwen-full-v2').encode()).hexdigest()[:20]
                         qwen_cache=output.parent/'.cache'/f'qwen-full-{key}.json'
                     if qwen_cache and qwen_cache.is_file():
@@ -148,7 +149,8 @@ def analyze(args):
                             transfer_report=args.qwen_transfer_report,
                             resident_gpu_weights_gib=args.qwen_resident_weights_gib,
                             activation_reserve_gib=args.qwen_activation_reserve_gib,
-                            placement_audit=args.qwen_placement_audit)
+                            placement_audit=args.qwen_placement_audit,
+                            placement_strategy=args.qwen_placement_strategy)
                         if qwen_cache:
                             qwen_cache.parent.mkdir(parents=True,exist_ok=True)
                             qwen_cache.write_text(json.dumps(qwen_full,ensure_ascii=False,indent=2),
@@ -482,6 +484,8 @@ def main(argv=None):
                    help='Dispositivo Qwen, CUDA explícito por padrão quando selecionado.')
     p.add_argument('--qwen-chunk-seconds',type=float,default=16.,
                    help='Duração da janela de transcrição Qwen (sobreposição 50%%).')
+    p.add_argument('--qwen-placement-strategy',choices=['auto','decoder'],
+                   default='auto',help='Mapear camadas do decoder primeiro na GPU (resident/full).')
     p.add_argument('--qwen-placement-audit',action='store_true',
                    help='Exibir mapa efetivo de pesos CPU/CUDA antes da transcrição full.')
     p.add_argument('--qwen-resident-weights-gib',type=float,default=1.0,
