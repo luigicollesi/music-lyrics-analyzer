@@ -219,10 +219,13 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
         result=model.transcribe(audio=(samples,16000),language=language)
     except torch.cuda.OutOfMemoryError as exc:
         profiler.mark("oom_during_transcribe")
+        import json
+        details=(" Memory checkpoints: "+
+                 json.dumps(profiler.to_dict(),ensure_ascii=False)) if memory_report else ""
         raise RuntimeError(
             "Qwen full-audio inference exceeded CUDA VRAM. "
             "Weight streaming does not eliminate audio-encoder activations. "
-            "Retry --qwen-mode windowed or --qwen-device cpu."
+            "Retry --qwen-mode windowed or --qwen-device cpu." + details
         ) from exc
     profiler.mark("after_transcribe")
     if not result or not str(result[0].text).strip():
