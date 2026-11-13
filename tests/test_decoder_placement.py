@@ -10,22 +10,31 @@ class Param:
 
 class Qwen3ASRThinkerTextDecoderLayer:
     def __init__(self, mib):self.mib=mib
+    def named_children(self):return []
+    def named_parameters(self,recurse=False):return []
+    def named_buffers(self,recurse=False):return []
     def parameters(self, recurse=True):
         return [Param(self.mib*1024*1024//2)]
 
 class Root:
     def __init__(self,layers):
         self.layers=layers
+    def named_children(self):
+        return [(f"layer_{i}", layer) for i,layer in enumerate(self.layers)]
+    def named_parameters(self,recurse=False):return []
+    def named_buffers(self,recurse=False):return []
     def named_modules(self):
         yield "",self
         for i,layer in enumerate(self.layers):
-            yield f"thinker.text_model.layers.{i}",layer
+            yield f"layer_{i}",layer
 
 def test_decoder_budget_keeps_only_whole_layers():
     model=Root([Qwen3ASRThinkerTextDecoderLayer(300) for _ in range(4)])
     mapping,summary=plan_decoder_priority(model,gpu_weights_gib=1,
                                           reserve_gib=1.5,physical_vram_gib=4)
-    assert mapping[""]=="cpu"
+    assert "" not in mapping
+    assert mapping["layer_0"]==0
+    assert mapping["layer_3"]=="cpu"
     assert len(summary["resident_decoder_layers"])==3
     assert summary["resident_weight_mib"]==900
 
