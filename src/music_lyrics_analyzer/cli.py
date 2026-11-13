@@ -115,27 +115,46 @@ def analyze(args):
                 if cache_file.is_file():
                     asr_segments=json.loads(cache_file.read_text(encoding='utf-8'))
                     print('  Reconhecimento auxiliar recuperado do cache.',file=sys.stderr)
+            qwen_segments=[]
             if args.asr_backend=='qwen' and manual_sections is None:
-                if asr_segments is None:
+                # The Qwen backend returns full overlapping *crop* intervals,
+                # not speech-segment timestamps. They cannot replace Whisper's
+                # short temporal anchors for hierarchical alignment.
+                qwen_cache=None
+                if args.resume and not args.asr_segments:
+                    key=sha256((file_hash(vocal_audio)+args.qwen_model+
+                                str(args.qwen_chunk_seconds)+'qwen-chunks-v1').encode()).hexdigest()[:20]
+                    qwen_cache=output.parent/'.cache'/f'qwen-{key}.json'
+                if qwen_cache and qwen_cache.is_file():
+                    qwen_segments=json.loads(qwen_cache.read_text(encoding='utf-8'))
+                    print('  Qwen ASR recuperado do cache.',file=sys.stderr)
+                else:
                     from .qwen_backend import transcribe_qwen_windows,MODELS
-                    print('  Executando Qwen3-ASR para localização auxiliar...',file=sys.stderr)
-                    asr_segments, qwen_plan=transcribe_qwen_windows(
+                    print('  Executando Qwen3-ASR para evidência textual...',file=sys.stderr)
+                    qwen_segments, qwen_plan=transcribe_qwen_windows(
                         audio16,model_size=args.qwen_model,
                         device=args.qwen_device,
                         chunk_seconds=args.qwen_chunk_seconds,
                         hop_seconds=args.qwen_chunk_seconds/2,
                         minimum_vram_gb=args.qwen_min_vram_gb)
-                    diagnostic['qwen_asr']={
-                        'model':MODELS[args.qwen_model],
-                        'device':qwen_plan.device,
-                        'gpu_name':qwen_plan.name,
-                        'segments':len(asr_segments),
-                        'temporal_precision':'chunk_only'}
-                else:
-                    diagnostic['qwen_asr']={
-                        'model':args.qwen_model,'segments':len(asr_segments),
-                        'status':'reused_supplied_or_cached_asr'}
-            qwen_diagnostic=diagnostic.get('qwen_asr')
+                    if qwen_cache:
+                        qwen_cache.parent.mkdir(parents=True,exist_ok=True)
+                        qwen_cache.write_text(json.dumps(qwen_segments,ensure_ascii=False),
+                                              encoding='utf-8')
+                diagnostic['qwen_asr']={
+                    'model':args.qwen_model,
+                    'segments':len(qwen_segments),
+                    'temporal_precision':'chunk_only',
+                    'role':'supplemental_text_not_timing_anchor'}
+                # Independent ASR with short speech-segment intervals is still
+                # required to establish section windows. Reuse supplied cache
+                # only when it contains Whisper rather than Qwen coarse crops.
+                if not args.asr_segments:
+                    from .hierarchical import recognition_windows
+                    asr_segments=recognition_windows(
+                        model,audio16,language=args.language,
+                        chunk_seconds=args.asr_chunk_seconds)
+                        qwen_diagnostic=diagnostic.get('qwen_asr')
             diagnostic=hierarchical_align(
                 model,audio16,words,lines,language=args.language,duration=duration,
                 section_timings=manual_sections,asr_segments=asr_segments,
@@ -149,6 +168,7 @@ def analyze(args):
                                                  ensure_ascii=False),encoding='utf-8')
             if qwen_diagnostic is not None:
                 diagnostic['qwen_asr']=qwen_diagnostic
+                diagnostic['qwen_asr']['examples']=qwen_segments[:12]
             method='stable-ts-hierarchical'
             unresolved=sum(w['start'] is None for w in words)
             if args.aligner == 'hybrid':
