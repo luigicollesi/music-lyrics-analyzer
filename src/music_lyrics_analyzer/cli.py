@@ -144,7 +144,9 @@ def analyze(args):
                     except (ImportError,RuntimeError):
                         pass
                 ctc = MMSBackend(model_id=args.ctc_model,
-                                 language=args.ctc_language,device=ctc_device)
+                                 language=args.ctc_language,device=ctc_device,
+                                 cache_dir=(output.parent/'.cache'/'ctc-emissions')
+                                 if args.resume else None)
                 if args.ctc_window_mode == 'phrase':
                     from .phrase_recovery import phrase_ctc_recovery
                     recovery_report=phrase_ctc_recovery(
@@ -224,7 +226,11 @@ def analyze(args):
             if not isinstance(manual,dict):
                 raise ValueError('--section-timings exige objeto JSON.')
             ctc=MMSBackend(model_id=args.ctc_model,
-                           language=args.ctc_language,device=args.device)
+                           language=args.ctc_language,
+                           device=(args.device if args.ctc_device=='inherit'
+                                   else args.ctc_device),
+                           cache_dir=(output.parent/'.cache'/'ctc-emissions')
+                           if args.resume else None)
             diagnostic={'strategy':'ctc','sections':[],'errors':[],'attempts':[]}
             for sec in sections:
                 bounds=manual.get(sec['id']) or manual.get(sec['label'])
