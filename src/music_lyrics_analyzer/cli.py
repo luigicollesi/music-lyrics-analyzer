@@ -106,7 +106,7 @@ def analyze(args):
                 if not isinstance(asr_segments,list):
                     raise ValueError('--asr-segments exige lista JSON.')
             cache_file=None
-            if args.resume and manual_sections is None and asr_segments is None:
+            if args.resume and manual_sections is None and asr_segments is None and args.asr_backend!='qwen':
                 key=sha256((file_hash(vocal_audio)+args.model+args.language+
                             str(args.asr_chunk_seconds)+args.asr_backend+
                             (args.qwen_model if args.asr_backend=='qwen' else '')+
@@ -154,7 +154,7 @@ def analyze(args):
                     asr_segments=recognition_windows(
                         model,audio16,language=args.language,
                         chunk_seconds=args.asr_chunk_seconds)
-                        qwen_diagnostic=diagnostic.get('qwen_asr')
+            qwen_diagnostic=diagnostic.get('qwen_asr')
             diagnostic=hierarchical_align(
                 model,audio16,words,lines,language=args.language,duration=duration,
                 section_timings=manual_sections,asr_segments=asr_segments,
