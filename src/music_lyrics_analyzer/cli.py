@@ -48,6 +48,10 @@ def separate_vocals(audio:Path,temp:Path,device:str):
 def analyze(args):
     music=Path(args.music_path).expanduser().resolve()
     lyrics_file=Path(args.lyrics_path).expanduser().resolve()
+    if args.aligner=='hybrid' and args.strategy!='hierarchical':
+        raise ValueError('--aligner hybrid exige --strategy hierarchical.')
+    if args.aligner=='ctc' and not args.section_timings:
+        raise ValueError('--aligner ctc exige --section-timings; sem âncoras locais, o modelo pode alinhar um refrão à ocorrência errada.')
     if not music.is_file():raise FileNotFoundError('Áudio inexistente: '+str(music))
     if not lyrics_file.is_file():raise FileNotFoundError('Letra inexistente: '+str(lyrics_file))
     lyric_text=lyrics_file.read_text(encoding='utf-8-sig')
@@ -81,7 +85,7 @@ def analyze(args):
             if not isinstance(data,list):raise ValueError('--word-timings exige lista JSON.')
             candidates=data;method='manual'
             warnings+=apply_alignment(words,candidates,method=method,duration=duration)
-        elif args.aligner=='stable-ts' and args.strategy=='hierarchical':
+        elif args.aligner in ('stable-ts','hybrid') and args.strategy=='hierarchical':
             print('3/4 Localizando seções e alinhando palavras...',file=sys.stderr)
             try:
                 import stable_whisper
@@ -122,8 +126,65 @@ def analyze(args):
                                                  ensure_ascii=False),encoding='utf-8')
             method='stable-ts-hierarchical'
             unresolved=sum(w['start'] is None for w in words)
+            if args.aligner == 'hybrid':
+                print('4/5 Recuperando lacunas com CTC acústico...',file=sys.stderr)
+                from .ctc_backend import MMSBackend, recover_ctc_gaps
+                ctc = MMSBackend(model_id=args.ctc_model,
+                                 language=args.ctc_language,device=args.device)
+                recovered_total = 0
+                for section in diagnostic.get('sections', []):
+                    window = section.get('window')
+                    if window is None:
+                        continue
+                    section_words = [w for w in words
+                                     if w['section_id']==section['id']]
+                    report = recover_ctc_gaps(
+                        ctc, audio16, section_words,
+                        start=window[0], end=window[1],
+                        threshold=args.ctc_threshold)
+                    recovered_total += report['recovered']
+                    diagnostic.setdefault('attempts', []).append({
+                        'section_id': section['id'], 'ctc_recovery':report})
+                print(f'  CTC recuperou {recovered_total} palavras candidatas.',file=sys.stderr)
+                method='hybrid-stable-ts-ctc'
             if unresolved:
                 warnings.append(f'{unresolved} de {len(words)} palavras permanecem sem alinhamento válido.')
+        elif args.aligner=='ctc':
+            print('3/4 Alinhando com CTC em janelas de seções manuais...',file=sys.stderr)
+            from .ctc_backend import MMSBackend, recover_ctc_gaps
+            audio16,_=read_audio(vocal_audio,16000)
+            if abs(len(audio16)/16000-duration)>1.:
+                raise RuntimeError('Vocal separado tem duração incompatível com a música.')
+            manual=json.loads(Path(args.section_timings).read_text(encoding='utf-8'))
+            if not isinstance(manual,dict):
+                raise ValueError('--section-timings exige objeto JSON.')
+            ctc=MMSBackend(model_id=args.ctc_model,
+                           language=args.ctc_language,device=args.device)
+            diagnostic={'strategy':'ctc','sections':[],'errors':[],'attempts':[]}
+            for sec in sections:
+                bounds=manual.get(sec['id']) or manual.get(sec['label'])
+                if bounds is None:
+                    diagnostic['sections'].append({'id':sec['id'],
+                                                   'status':'unresolved'})
+                    continue
+                if (not isinstance(bounds,list) or len(bounds)!=2 or
+                    not 0 <= float(bounds[0]) < float(bounds[1]) <= duration+.1):
+                    raise ValueError('Seção manual inválida: '+sec['label'])
+                if float(bounds[1])-float(bounds[0]) > 20.:
+                    raise ValueError(
+                        'Seção maior que 20 s no modo CTC isolado: '+sec['label']+
+                        '. Use --aligner hybrid para localizar janelas menores.')
+                region=[w for w in words if w['section_id']==sec['id']]
+                report=recover_ctc_gaps(ctc,audio16,region,
+                                        start=float(bounds[0]),end=float(bounds[1]),
+                                        threshold=args.ctc_threshold)
+                diagnostic['attempts'].append({'section_id':sec['id'],
+                                               'ctc_recovery':report})
+                diagnostic['sections'].append({
+                    'id':sec['id'],'window':bounds,'status':'tentative',
+                    'aligned_words':report['recovered'],
+                    'total_words':len(region)})
+            method='ctc-mms'
         elif args.aligner=='stable-ts':
             print('3/4 Alinhando letra globalmente (legado)...',file=sys.stderr)
             candidates=stable_ts_align(vocal_audio,aligned_lyrics,args.language,args.model,args.device)
@@ -150,10 +211,20 @@ def analyze(args):
              for sec in sections}
     for sec in sections:
         sec.update(quality[sec['id']])
+    coverage_counts = {
+        'total': len(words),
+        'timed': sum(w['start'] is not None for w in words),
+        'tentative': sum(w['start'] is not None and
+                         w['alignment']['status']=='tentative' for w in words),
+        'unresolved': sum(w['start'] is None for w in words),
+    }
+    coverage_counts['non_tentative'] = (
+        coverage_counts['timed'] - coverage_counts['tentative'])
     result={'schema_version':2 if args.prosody=='pyin' else 1,
             'audio':{'path':str(music),'duration_seconds':round(duration,3),
                      'sample_rate':sr,'sha256':file_hash(music)},
             'rhythm':rhythm,'sections':sections,'lines':lines,'words':words,
+            'coverage':coverage_counts,
             'analysis':{'aligner':method,'separator':args.separator,'language':args.language,
                         'strength_definition':'relative_acoustic_proxy','strength_source':source,
                         'strategy':args.strategy,
@@ -172,7 +243,11 @@ def analyze(args):
             'sections':sections,'diagnostics':result['diagnostics'],'warnings':warnings},
             ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
         print(f'Relatório: {report}',file=sys.stderr)
-    print(f'Arquivo: {output}\nBPM: {rhythm["bpm"]}\nAlinhadas: {sum(w["start"] is not None for w in words)}/{len(words)}')
+    print(f'Arquivo: {output}\\nBPM: {rhythm["bpm"]}\\n'
+          f'Com horários: {coverage_counts["timed"]}/{coverage_counts["total"]}; '
+          f'não-contextuais: {coverage_counts["non_tentative"]}; '
+          f'contextuais tentativas: {coverage_counts["tentative"]}; '
+          f'sem horário: {coverage_counts["unresolved"]}')
     print('\nSeções identificadas (tempos baseados nas palavras alinhadas):')
     for sec in sections:
         clock=(f'{sec["start"]:.2f}s–{sec["end"]:.2f}s'
@@ -188,7 +263,10 @@ def main(argv=None):
     p.add_argument('--lyrics-path',required=True,help='Caminho para letra em Markdown (.md) ou texto simples (.txt), UTF-8.')
     p.add_argument('--output',default='analysis/lyrics-analysis.json',help='Arquivo de saída JSON.')
     p.add_argument('--language',default='pt',help='Idioma da letra (padrão: pt).')
-    p.add_argument('--aligner',choices=['stable-ts','none'],default='stable-ts')
+    p.add_argument('--aligner',choices=['stable-ts','hybrid','ctc','none'],default='stable-ts')
+    p.add_argument('--ctc-model',default='facebook/mms-1b-all',help='Checkpoint Hugging Face CTC, baixado apenas quando usado.')
+    p.add_argument('--ctc-language',default='por',help='Adaptador de idioma MMS (Português: por).')
+    p.add_argument('--ctc-threshold',type=float,default=-2.5,help='Limite de score acústico CTC (log-probabilidade); não é confiança calibrada.')
     p.add_argument('--strategy',choices=['hierarchical','legacy'],default='hierarchical',
                    help='Localização hierárquica (padrão) ou alinhamento global anterior.')
     p.add_argument('--asr-chunk-seconds',type=float,default=30.,help='Janela do reconhecimento auxiliar em segundos.')

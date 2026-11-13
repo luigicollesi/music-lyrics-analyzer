@@ -13,6 +13,7 @@ dependencies = ["numpy>=1.26,<3", "librosa>=0.11,<2"]
 [project.optional-dependencies]
 align = ["stable-ts>=2.19,<3"]
 separation = ["demucs>=4,<5"]
+ctc = ["torch>=2.2,<3", "transformers>=4.46,<5", "ctc-segmentation>=1.7.5,<2"]
 test = ["pytest>=8,<10"]
 
 [project.scripts]
