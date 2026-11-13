@@ -478,3 +478,32 @@ Do not claim success without actual hardware validation. If `streamed`
 still OOMs, **full CPU inference is the supported fallback preserving
 whole-song transcription**; a deeper architecture-specific refactor
 would be needed to offload or tile audio-encoder activations.
+
+## Managed runtime foundation — diagnostic milestone
+
+Use `--qwen-memory-report` with `--qwen-mode full` to record checkpoints
+before model load, after loading, after offload-hook setup, and after
+transcription. CUDA measurements include allocated/reserved/peak/free VRAM;
+Linux CPU measurement includes process maximum resident set size. On CUDA
+OOM the checkpoints are appended to the raised error for troubleshooting.
+
+The new `inference_runtime/` package separates weight/offload checks,
+device validation, profiling and future activation/generation policies.
+Importing it does not download a model. It validates that tensors on the
+`meta` device have Accelerate hooks attached (directly or on a child).
+
+Example:
+```bash
+python analise.py --music-path audio/Inferno.wav --lyrics-path lyrics/Inferno.md \
+ --aligner hybrid --strategy hierarchical --asr-backend qwen \
+ --qwen-mode full --qwen-model 0.6b --qwen-device streamed \
+ --qwen-memory-report --ctc-device cpu --device cpu \
+ --resume --report --output analysis/qwen-managed.json
+```
+
+**Scope:** phase-1 diagnostics and runtime modularization; NO solution
+to the previously observed 1.32 GB activation OOM is claimed. The
+activation and generation managers currently document unchanged policies.
+The Qwen input device proxy is still experimental. Future audio-encoder
+changes must prove semantic equivalence before publication. A successful
+offline test suite does not validate a 332-second GPU run.
