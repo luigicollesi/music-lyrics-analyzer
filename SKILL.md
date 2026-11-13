@@ -300,3 +300,25 @@ python analise.py --music-path "song.wav" --lyrics-path "lyrics.md" \
   --ctc-device cpu --resume --report \
   --output analysis/overlap-review.json
 ```
+
+## V1 missing-line ASR localization in overlap review
+
+The experimental overlap mode now optionally uses the **already generated
+or cached** auxiliary ASR segments to propose a crop for a completely
+unanchored line. It requires strong ordered lexical overlap and enough
+unoccupied audio **between neighboring anchored lyric lines**. It skips
+short, ambiguous or repeatedly matched phrases instead of forcing the
+reference text onto the wrong singing. All proposals include
+`localization_source: asr_lexical_match` and the raw ASR similarity score.
+
+Candidate crop limits and local ordering are safeguards, not a guarantee
+that an ASR phrase is correct. Crucially, such proposals are fed to
+continuous CTC only for experimental comparison and are **never applied
+to final timestamps**. When ASR evidence is absent, the system still
+retains the anchored-only overlap behavior. Reusing ASR cache and MMS
+emissions avoids adding a new mandatory model or download.
+
+Check `asr_localization` in the output report, examine `skipped`
+attempts (especially `ambiguous_asr_occurrence` and
+`no_strong_asr_match`), and validate correct location by listening
+to the actual crop before changing the accepted timeline.
