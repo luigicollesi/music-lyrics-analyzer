@@ -72,7 +72,8 @@ def test_continuous_segment_records_rejections_but_not_confidence(monkeypatch):
     data=emission([0,1,2,0])
     diagnostic={}
     records=align_continuous_emissions(data,[{"id":"w1","text":"ab"}],
-        object(),duration=.08,offset=7.,diagnostic=diagnostic)
+        type("TokenizerStub",(),{"pad_token_id":0})(),duration=.08,
+        offset=7.,diagnostic=diagnostic)
     assert diagnostic["status"]=="ok"
     assert diagnostic["word_count"]==1
     assert records[0]["start"]==7.02
