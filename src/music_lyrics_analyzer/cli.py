@@ -154,7 +154,8 @@ def analyze(args):
                             ctc,audio16,words,lines,
                             seconds=args.ctc_overlap_seconds,
                             hop=args.ctc_overlap_hop,
-                            threshold=args.ctc_threshold)
+                            threshold=args.ctc_threshold,
+                            asr_segments=diagnostic.get('asr_segments'))
                     else:
                         from .phrase_recovery import phrase_ctc_recovery
                         recovery_report=phrase_ctc_recovery(
@@ -169,6 +170,7 @@ def analyze(args):
                         'window_mode':args.ctc_window_mode,
                         'experimental_only':args.ctc_window_mode in ('continuous','overlap'),
                         'stability':recovery_report.get('stability',[]),
+                        'asr_localization':recovery_report.get('asr_localization'),
                         'attempts':len(recovery_report['attempts']),
                         'candidate_count':len(recovery_report['candidates']),
                         'resolver_accepted':recovery_report['resolver']['accepted_count'],
@@ -186,6 +188,7 @@ def analyze(args):
                         'threshold':args.ctc_threshold,
                         'mode':args.ctc_window_mode,
                         'stability':recovery_report.get('stability',[]),
+                        'asr_localization':recovery_report.get('asr_localization'),
                         'committed':recovery_report['committed'],
                         'audio_sha256':file_hash(music),
                         'model_integrity':ctc.integrity.to_dict(),
