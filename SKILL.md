@@ -243,3 +243,31 @@ refinement, acoustic boundary calibration, global soft-anchor selection,
 and per-word melodic/vocal metrics improvements remain future work.
 Use `--prosody pyin` for the current independent vocal-pitch baseline,
 preferably with a synchronized vocal stem.
+
+## V1 PR4a — structural phrase-location conflict audit
+
+In continuous comparison mode, `phrase_conflicts.py` flags an **entirely
+unanchored lyric line** when its hypothesized CTC word spans substantially
+overlap the measured interval of a neighboring, already anchored lyric
+line. This is the reported failure involving "Espinhos rasgam..." and the
+following "Três feras...": a valid CTC Viterbi path on the wrong crop is
+not evidence of correct lyrics.
+
+The guard is conservative and **diagnostic**, not an acoustic localization
+solution. It compares neighboring line occurrence IDs rather than the
+strings of repeated choruses. The threshold is an overlap *fraction*,
+not a calibrated probability of a correct alignment. An automatic
+alignment anchor may also be wrong; avoid promoting its authority without
+independent evidence. Candidates that would otherwise pass CTC scoring
+but fail this check are marked `rejected` with
+`rejection_reason: phrase_location_conflict`; candidates already rejected
+on acoustic grounds retain their original reason. Raw timing and scores
+remain available. Review `phrase_conflicts` in the CTC candidate JSON
+and `diagnostics.ctc_summary.phrase_conflicts`.
+
+**Not yet implemented:** independently finding the correct occurrence of
+a fully unanchored phrase using a vocal-activity/ASR search. This guard
+cannot guarantee either valid word timings or correct section placement.
+The `continuous` mode remains comparison-only, never committing
+timestamps automatically. Continue to assess word timing and vocal
+intonation as separate goals.
