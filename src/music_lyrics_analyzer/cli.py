@@ -135,6 +135,7 @@ def analyze(args):
                     diagnostic['qwen_asr']={
                         'model':args.qwen_model,'segments':len(asr_segments),
                         'status':'reused_supplied_or_cached_asr'}
+            qwen_diagnostic=diagnostic.get('qwen_asr')
             diagnostic=hierarchical_align(
                 model,audio16,words,lines,language=args.language,duration=duration,
                 section_timings=manual_sections,asr_segments=asr_segments,
@@ -146,6 +147,8 @@ def analyze(args):
                 cache_file.parent.mkdir(parents=True,exist_ok=True)
                 cache_file.write_text(json.dumps(diagnostic['asr_segments'],
                                                  ensure_ascii=False),encoding='utf-8')
+            if qwen_diagnostic is not None:
+                diagnostic['qwen_asr']=qwen_diagnostic
             method='stable-ts-hierarchical'
             unresolved=sum(w['start'] is None for w in words)
             if args.aligner == 'hybrid':
