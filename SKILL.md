@@ -530,3 +530,31 @@ activations, attention implementation or language-model KV cache.
 
 Example using 332s audio: add `--qwen-encoder-memory-trace` to the
 existing `--qwen-mode full --qwen-device streamed` command.
+
+## Experimental decoder block offload granularity
+
+The default `--qwen-offload-granularity tensor` preserves the previous
+Accelerate per-module offload behavior. `--qwen-offload-granularity layer`
+uses Accelerate `cpu_offload(...,
+preload_module_classes=["Qwen3ASRThinkerTextDecoderLayer"])`.
+This loads the entire Qwen text decoder block for its forward instead of
+materializing each of its leaf modules separately. It is a targeted
+experiment to reduce Python overhead in `set_module_tensor_to_device`.
+
+```bash
+python analise.py --music-path audio/Inferno.wav --lyrics-path lyrics/Inferno.md \
+ --aligner hybrid --strategy hierarchical --asr-backend qwen \
+ --qwen-mode full --qwen-device streamed --qwen-model 0.6b \
+ --qwen-offload-granularity layer --qwen-memory-report \
+ --qwen-encoder-memory-trace --ctc-device cpu --device cpu \
+ --resume --report --output analysis/qwen-granularity-layer.json
+```
+
+**Cautions:** This changes the peak lifetime of weights (entire decoder
+block present during forward), NOT CPU residency across decoding tokens
+and NOT asynchronous prefetch. It can increase peak VRAM and cause OOM.
+Do not treat a lower py-spy Python percentage as proof of GPU speedup:
+measure end-to-end throughput and CUDA peak. This stage does not yet
+resolve the Transformers `meta` device warning, activation OOM, or
+provide a resident-weight scheduler. Use the default tensor strategy
+if `layer` fails. Both settings have isolated cache keys.
