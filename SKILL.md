@@ -631,3 +631,35 @@ The audit is an **observation only**. It does not yet change the device
 map, generate a custom map, or eliminate the decoder offloading
 bottleneck. Run with `--qwen-transfer-report` to correlate both
 diagnostics. Do not infer GPU residency solely from a budget flag.
+
+## Experimental decoder-priority placement, full-song Qwen3-ASR
+
+`--qwen-mode full --qwen-device resident --qwen-placement-strategy decoder`
+first loads Qwen CPU-side and discovers actual modules with class
+`Qwen3ASRThinkerTextDecoderLayer`. It chooses complete decoder blocks
+within `--qwen-resident-weights-gib` (90% usable planning margin),
+then dispatches selected blocks to CUDA using Accelerate while keeping
+unselected modules on CPU/offload. The model wrapper uses the real CUDA
+execution device for the inputs. The mode prints selected layer names
+and estimated weight MiB before processing the full audio.
+
+This is intentionally opt-in. The default `--qwen-placement-strategy auto`
+is unchanged. It is not GPU asynchronous prefetch or activation offload.
+The physical VRAM reserve is only a *budget constraint*, not a hard
+runtime activation memory cap. Model weights or Transformers internals
+may require further compatibility adjustments, so success on GTX 1050
+Ti is **not** established without real hardware testing.
+
+Example:
+```bash
+python analise.py --music-path /path/to/video.mp4 --lyrics-path /path/to/LETRA_DEFINITIVA.md \
+ --aligner hybrid --strategy hierarchical --asr-backend qwen \
+ --qwen-mode full --qwen-model 0.6b --qwen-device resident \
+ --qwen-placement-strategy decoder --qwen-resident-weights-gib 1.0 \
+ --qwen-activation-reserve-gib 1.5 --qwen-cpu-memory-gb 12 \
+ --qwen-placement-audit --qwen-transfer-report --qwen-memory-report \
+ --ctc-window-mode overlap --ctc-device cpu --device cpu \
+ --resume --report --output analysis/qwen-decoder-priority.json
+```
+Video input depends on the repository audio loader's ffmpeg support;
+when in doubt use an extracted WAV from the same source video.
