@@ -97,11 +97,15 @@ def phrase_ctc_recovery(backend, audio16, words, lines, sections, *,
                 entry["status"]="error"
                 entry["error"]=str(exc)[:350]
             attempts.append(entry)
+    from .phrase_conflicts import quarantine_conflicted_candidates
+    all_candidates, conflict_audit = quarantine_conflicted_candidates(
+        words, lines, all_candidates, enabled=(mode == 'continuous'))
     solution=resolve_candidates(words,all_candidates)
     count=commit_resolved(words,solution) if commit else 0
     return {"recovered":count,"mode":mode,"committed":commit,
             "attempts":attempts,
             "candidates":all_candidates,
+            "phrase_conflicts":conflict_audit,
             "resolver":{"accepted_count":solution["accepted_count"],
                         "decisions":solution["decisions"],
                         "candidate_decisions":solution["candidate_decisions"]}}
