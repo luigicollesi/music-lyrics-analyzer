@@ -50,13 +50,21 @@ def segment_emissions(log_probs: np.ndarray, words: list[dict],
     unknown_id = tokenizer.unk_token_id
     tokens = []
     for word in words:
-        target = normalize_ctc(word["text"])
-        if not target:
-            return []
-        # Tokenize each word separately; no blank/unknown token is permitted.
-        ids = tokenizer(target, add_special_tokens=False).input_ids
-        if not ids or any(i == unknown_id or i == blank_id or
-                          i < 0 or i >= log_probs.shape[1] for i in ids):
+        # Prefer the native Portuguese spelling when supported. Only remove
+        # diacritics when the checkpoint cannot encode the original graphemes.
+        raw = "".join(c for c in word["text"].casefold() if c.isalnum())
+        alternatives = list(dict.fromkeys((raw, normalize_ctc(word["text"]))))
+        ids = None
+        for target in alternatives:
+            if not target:
+                continue
+            possible = tokenizer(target, add_special_tokens=False).input_ids
+            if possible and all(
+                    i != unknown_id and i != blank_id and
+                    0 <= i < log_probs.shape[1] for i in possible):
+                ids = possible
+                break
+        if ids is None:
             return []
         tokens.append(np.asarray(ids, dtype=np.int64))
     config = CtcSegmentationParameters()
