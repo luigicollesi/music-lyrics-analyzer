@@ -358,3 +358,28 @@ This integration uses the official `qwen-asr` Transformers backend;
 it neither installs model weights by default nor changes the baseline
 `--asr-backend whisper`. Full pipeline accuracy and actual CUDA
 inference still need independent validation on the target machine.
+
+## Correction: coarse Qwen ASR chunks are not timing anchors
+
+The Qwen3-ASR adapter returns transcription text bounded by 16-second
+overlapping audio **crops**. These timestamps are not the word/phrase
+boundaries required by hierarchical section localization. Earlier code
+replaced the short Whisper ASR segment list with those coarse crops, often
+yielding **zero anchored sections and 0 timed words** despite successful
+Qwen GPU inference.
+
+The Qwen mode now generates and caches Qwen transcripts separately
+(`.cache/qwen-*.json`) as supplemental text evidence, while using short
+Whisper speech segments to establish and validate the section timing
+anchors. It never substitutes the coarse Qwen crop interval for a precise
+phrase location. Qwen transcript examples and provenance are exported
+in `diagnostics.qwen_asr`; evaluation of those transcripts is currently
+diagnostic only. Qwen by itself cannot yet improve published alignment
+quality. The additional Whisper ASR pass is intentional to avoid regression.
+When `--asr-segments` is explicitly provided, those supplied segments
+remain the timing reference.
+
+Do not mistake model loading or repeated `pad_token_id` messages for
+proof of a correct ASR transcript. Compare the saved Qwen chunk texts
+against the sung lyrics, then develop a window-internal localization
+algorithm if the transcript improves recognition.
