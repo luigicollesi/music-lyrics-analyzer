@@ -1,3 +1,25 @@
+## V0.5 experimental — alinhamento acústico CTC (MMS)
+
+A nova opção `--aligner hybrid` mantém a localização e alinhamento hierárquico `stable-ts`, mas tenta preencher **lacunas** usando um modelo acústico CTC multilíngue, diretamente com a letra original. O modelo é carregado apenas quando solicitado e usa os tokens do tokenizer do idioma `por` (português). Esta primeira implementação é *grafêmica* (tokens do MMS), não um alinhador IPA/fonêmico independente.
+
+Instale as dependências opcionais:
+
+```bash
+python -m pip install -e '.[align,ctc,test]'
+```
+
+Execute:
+
+```bash
+python analise.py --music-path audio/song.wav --lyrics-path lyrics/song.md --aligner hybrid --strategy hierarchical --ctc-language por --device cpu --report --resume
+```
+
+A análise `ctc` pura está disponível **somente** quando há um `--section-timings` com limites de seções comprovados; isso evita encaixar refrões em ocorrências incorretas. Cada tentativa CTC deve ocorrer em um intervalo de no máximo 20 s, sendo rejeitadas sequências maiores que 40 palavras. Os timestamps CTC são `tentative`, porque o alinhamento forçado não verifica se a letra foi realmente cantada. As demais palavras não são alteradas. Os métodos são identificados por `alignment.method=ctc-mms` e cada tentativa é registrada no JSON de diagnóstico. O limite de score `--ctc-threshold` usa log-probabilidade *não calibrada*; não o interprete como confiança.
+
+O checkpoint padrão `facebook/mms-1b-all` é grande e sua licença CC-BY-NC restringe usos comerciais. O modelo não é incluído no repositório e precisa ser baixado na primeira utilização. Considere recursos de RAM e a licença antes de usar; `--aligner stable-ts` permanece o comportamento padrão.
+
+A V0.5 ainda requer validação com áudio real: alta cobertura CTC não garante timestamps corretos. Não faça merge baseado apenas em testes unitários.
+
 ### Recuperação acústica de lacunas (V0.4 candidata)
 
 Antes da segunda passagem de ASR, o pipeline agora tenta reexecutar `model.align` apenas nas sequências de palavras ainda sem horário. Os limites do recorte são obtidos da palavra já alinhada anterior e posterior, ou da janela local já localizada. Não se geram tempos por interpolação. Lacunas maiores que 12 segundos ou com mais de 18 palavras permanecem pendentes desta etapa. O resultado registra `diagnostics.attempts[].acoustic_gap_recovery`.
