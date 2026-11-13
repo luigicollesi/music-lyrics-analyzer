@@ -165,8 +165,15 @@ class MMSBackend:
             ignore_mismatched_sizes=True).to(device).eval()
         # Match tokenizer vocabulary to the loaded language adapter.
         self.processor.tokenizer.set_target_lang(language)
-        if hasattr(self.model, "load_adapter"):
-            self.model.load_adapter(language)
+        if not hasattr(self.model, "load_adapter"):
+            raise RuntimeError(
+                "Installed Transformers model does not expose load_adapter; "
+                "cannot verify the MMS language-adapter loading path.")
+        self.model.load_adapter(language)
+        from .model_integrity import inspect_mms
+        self.integrity = inspect_mms(
+            self.model, self.processor.tokenizer,
+            model_id=model_id, language=language, adapter_requested=True)
 
     def infer(self, audio16: np.ndarray) -> np.ndarray:
         torch = self.torch
