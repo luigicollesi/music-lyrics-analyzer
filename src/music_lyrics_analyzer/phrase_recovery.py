@@ -67,6 +67,11 @@ def phrase_ctc_recovery(backend, audio16, words, lines, sections, *,
                 entry["status"]=diagnostic.get("status","unknown")
                 entry["rejections"]=diagnostic.get("rejected",{})
                 entry["candidates"]=len(records)
+                if mode=="continuous" and diagnostic.get("token_spans") is not None:
+                    entry["token_spans"]=diagnostic["token_spans"]
+                    entry["blank_frame_ratio"]=diagnostic.get("blank_frame_ratio")
+                    entry["frame_duration"]=diagnostic.get("frame_duration")
+                    entry["total_path_logprob"]=diagnostic.get("total_path_logprob")
                 if diagnostic.get("continuous_reference") is not None:
                     ref=diagnostic["continuous_reference"]
                     entry["continuous_reference"]={
