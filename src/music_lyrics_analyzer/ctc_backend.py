@@ -72,7 +72,18 @@ def segment_emissions(log_probs: np.ndarray, words: list[dict],
                 diagnostic.update(status="unsupported_token",word_id=word.get("id"),token=word.get("text"))
             return []
         tokens.append(np.asarray(ids, dtype=np.int64))
+    # The backtracking implementation indexes config.char_list[token_id].
+    # prepare_token_list() itself does not populate char_list. Leaving it
+    # None raises TypeError: 'NoneType' object is not subscriptable.
+    vocabulary = tokenizer.get_vocab()
+    if not isinstance(vocabulary, dict):
+        raise ValueError("CTC tokenizer did not provide a vocabulary")
+    char_list = [f"<token:{i}>" for i in range(log_probs.shape[1])]
+    for symbol, index in vocabulary.items():
+        if isinstance(index, int) and 0 <= index < len(char_list):
+            char_list[index] = str(symbol)
     config = CtcSegmentationParameters()
+    config.char_list = char_list
     config.blank = int(blank_id)
     config.index_duration = float(duration) / len(log_probs)
     config.score_min_mean_over_L = 2
