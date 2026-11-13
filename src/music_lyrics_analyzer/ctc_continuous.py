@@ -159,6 +159,14 @@ def align_continuous_emissions(log_probs, words, tokenizer, *,
         offset=offset,threshold=threshold)
     if diagnostic is not None:
         diagnostic.update(status="ok",total_path_logprob=round(score,4),
+                          frame_duration=round(duration/len(log_probs),8),
+                          blank_frame_ratio=round(float(np.mean(path%2==0)),4),
+                          token_spans=[{
+                              "index":v.index,"token_id":v.token_id,
+                              "word_id":v.word_id,"start_frame":v.start_frame,
+                              "end_frame":v.end_frame,
+                              "mean_logprob":round(v.mean_logprob,4)}
+                              for v in spans],
                           candidate_records=records,
                           candidates=sum(r["status"]=="candidate" for r in records),
                           rejected={"low_score":sum(
