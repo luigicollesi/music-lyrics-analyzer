@@ -122,7 +122,8 @@ def transcribe_qwen_windows(audio16, *, model_size="0.6b",
 def transcribe_qwen_full(audio16, *, model_size="0.6b",
                          device="cuda", language="Portuguese",
                          max_new_tokens=2048, minimum_vram_gb=0.,
-                         max_audio_seconds=600.):
+                         max_audio_seconds=600., gpu_memory_gb=2.5,
+                         cpu_memory_gb=12.):
     """One Qwen transcription request for the whole audio, without cropping.
 
     The result contains text, NOT timestamped phrases. A generation output
@@ -144,24 +145,50 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
         from qwen_asr import Qwen3ASRModel
     except ImportError as exc:
         raise RuntimeError("Install optional Qwen backend: pip install -e '.[qwen]'") from exc
-    plan=choose_device(torch,device,minimum_vram_gb=minimum_vram_gb)
-    dtype=torch.float16 if plan.device.startswith("cuda") else torch.float32
+    if device=="hybrid":
+        if not 0.5<=gpu_memory_gb<=64 or not 1<=cpu_memory_gb<=1024:
+            raise ValueError("Invalid hybrid GPU or CPU memory budget.")
+        try:
+            import accelerate  # noqa: F401 -- required by HF device_map
+        except ImportError as exc:
+            raise RuntimeError("Hybrid mode requires accelerate: pip install -e '.[qwen]'") from exc
+        plan=choose_device(torch,"cuda",minimum_vram_gb=minimum_vram_gb)
+        if gpu_memory_gb>=plan.total_vram_gb:
+            raise ValueError("Hybrid GPU budget must be below physical VRAM.")
+        placement=dict(device_map="auto",max_memory={
+            0:f"{int(gpu_memory_gb*1024)}MiB",
+            "cpu":f"{int(cpu_memory_gb*1024)}MiB"},
+            low_cpu_mem_usage=True)
+        dtype=torch.float16
+    else:
+        plan=choose_device(torch,device,minimum_vram_gb=minimum_vram_gb)
+        dtype=torch.float16 if plan.device.startswith("cuda") else torch.float32
+        placement=dict(device_map=plan.device)
     model=Qwen3ASRModel.from_pretrained(
-        MODELS[model_size],dtype=dtype,device_map=plan.device,
+        MODELS[model_size],dtype=dtype,**placement,
         max_inference_batch_size=1,max_new_tokens=max_new_tokens)
+    device_map=getattr(model.model,"hf_device_map",None)
+    if plan.device.startswith("cuda"):
+        torch.cuda.reset_peak_memory_stats(0)
     try:
         result=model.transcribe(audio=(samples,16000),language=language)
     except torch.cuda.OutOfMemoryError as exc:
         raise RuntimeError(
             "Qwen full-audio inference exceeded CUDA VRAM. "
-            "Retry with --qwen-mode windowed or --qwen-device cpu."
+            "Hybrid/offload does not eliminate audio-encoder activations. "
+            "Retry --qwen-mode windowed or --qwen-device cpu."
         ) from exc
     if not result or not str(result[0].text).strip():
         raise RuntimeError("Qwen full-audio returned no transcription.")
     text=str(result[0].text).strip()
     return {
         "mode":"full","text":text,"duration_seconds":round(duration,3),
-        "model":MODELS[model_size],"device":plan.device,
+        "model":MODELS[model_size],"device":device if device=="hybrid" else plan.device,
+        "gpu_memory_budget_gb":gpu_memory_gb if device=="hybrid" else None,
+        "cpu_memory_budget_gb":cpu_memory_gb if device=="hybrid" else None,
+        "device_map":device_map,
+        "peak_gpu_allocated_gb":round(torch.cuda.max_memory_allocated(0)/1024**3,3)
+            if plan.device.startswith("cuda") else None,
         "max_new_tokens":max_new_tokens,
         "word_count":len(text.split()),
         "token_limit_risk":len(text.split()) >= max_new_tokens//3,

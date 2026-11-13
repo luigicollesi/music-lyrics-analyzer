@@ -123,7 +123,8 @@ def analyze(args):
                     if args.resume:
                         key=sha256((file_hash(vocal_audio)+args.qwen_model+
                                     args.qwen_device+str(args.qwen_max_new_tokens)+
-                                    'qwen-full-v1').encode()).hexdigest()[:20]
+                                    str(args.qwen_gpu_memory_gb)+str(args.qwen_cpu_memory_gb)+
+                                    'qwen-full-v2').encode()).hexdigest()[:20]
                         qwen_cache=output.parent/'.cache'/f'qwen-full-{key}.json'
                     if qwen_cache and qwen_cache.is_file():
                         qwen_full=json.loads(qwen_cache.read_text(encoding='utf-8'))
@@ -135,7 +136,9 @@ def analyze(args):
                             audio16,model_size=args.qwen_model,
                             device=args.qwen_device,
                             max_new_tokens=args.qwen_max_new_tokens,
-                            minimum_vram_gb=args.qwen_min_vram_gb)
+                            minimum_vram_gb=args.qwen_min_vram_gb,
+                            gpu_memory_gb=args.qwen_gpu_memory_gb,
+                            cpu_memory_gb=args.qwen_cpu_memory_gb)
                         if qwen_cache:
                             qwen_cache.parent.mkdir(parents=True,exist_ok=True)
                             qwen_cache.write_text(json.dumps(qwen_full,ensure_ascii=False,indent=2),
@@ -145,6 +148,8 @@ def analyze(args):
                         'role':'full_text_diagnostic_not_timing_anchor',
                         'transcript':qwen_full}
                 else:
+                    if args.qwen_device=='hybrid':
+                        raise ValueError('--qwen-device hybrid requer --qwen-mode full.')
                     qwen_cache=None
                     if args.resume:
                         key=sha256((file_hash(vocal_audio)+args.qwen_model+
@@ -463,10 +468,14 @@ def main(argv=None):
                    help='Orçamento de tokens da transcrição integral.')
     p.add_argument('--qwen-model',choices=['0.6b','1.7b'],default='0.6b',
                    help='Modelo Qwen3-ASR opcional; 1.7b exige mais memória.')
-    p.add_argument('--qwen-device',choices=['cuda','cpu','auto'],default='cuda',
+    p.add_argument('--qwen-device',choices=['cuda','cpu','auto','hybrid'],default='cuda',
                    help='Dispositivo Qwen, CUDA explícito por padrão quando selecionado.')
     p.add_argument('--qwen-chunk-seconds',type=float,default=16.,
                    help='Duração da janela de transcrição Qwen (sobreposição 50%%).')
+    p.add_argument('--qwen-gpu-memory-gb',type=float,default=2.5,
+                   help='Orçamento de VRAM para offloading em modo full/hybrid.')
+    p.add_argument('--qwen-cpu-memory-gb',type=float,default=12.,
+                   help='Orçamento de RAM para offloading em modo full/hybrid.')
     p.add_argument('--qwen-min-vram-gb',type=float,default=0.,
                    help='Orçamento mínimo de VRAM exigido antes de carregar Qwen.')
     p.add_argument('--asr-chunk-seconds',type=float,default=30.,help='Janela do reconhecimento auxiliar em segundos.')
