@@ -66,7 +66,7 @@ def test_reject_nonfinite_emissions_and_blank_targets():
 
 
 def test_continuous_segment_records_rejections_but_not_confidence(monkeypatch):
-    from music_lyrics_analyzer import ctc_continuous as module
+    from music_lyrics_analyzer import phrase_tokens as module
     tokens=PhraseTokens("ab",(1,2),("w1","w1"),("w1",),False)
     monkeypatch.setattr(module,"tokenize_phrase",lambda *args,**kwargs:tokens)
     data=emission([0,1,2,0])
