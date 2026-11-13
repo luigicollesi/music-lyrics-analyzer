@@ -148,8 +148,8 @@ def analyze(args):
                         'role':'full_text_diagnostic_not_timing_anchor',
                         'transcript':qwen_full}
                 else:
-                    if args.qwen_device=='hybrid':
-                        raise ValueError('--qwen-device hybrid requer --qwen-mode full.')
+                    if args.qwen_device in ('hybrid','streamed'):
+                        raise ValueError('--qwen-device hybrid/streamed requer --qwen-mode full.')
                     qwen_cache=None
                     if args.resume:
                         key=sha256((file_hash(vocal_audio)+args.qwen_model+
@@ -468,7 +468,7 @@ def main(argv=None):
                    help='Orçamento de tokens da transcrição integral.')
     p.add_argument('--qwen-model',choices=['0.6b','1.7b'],default='0.6b',
                    help='Modelo Qwen3-ASR opcional; 1.7b exige mais memória.')
-    p.add_argument('--qwen-device',choices=['cuda','cpu','auto','hybrid'],default='cuda',
+    p.add_argument('--qwen-device',choices=['cuda','cpu','auto','hybrid','streamed'],default='cuda',
                    help='Dispositivo Qwen, CUDA explícito por padrão quando selecionado.')
     p.add_argument('--qwen-chunk-seconds',type=float,default=16.,
                    help='Duração da janela de transcrição Qwen (sobreposição 50%%).')
