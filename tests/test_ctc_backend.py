@@ -31,7 +31,7 @@ def test_missing_middle_words_use_bounding_anchors():
     result = recover_ctc_gaps(fake,np.zeros(16000*5),
                               words,start=0,end=5)
     assert result["recovered"] == 2
-    assert fake.windows == [(1.3,3.0,["como","mingau"])]
+    assert fake.windows == [(1.0,3.4,["hoje","como","mingau","para"])]
     assert words[1]["alignment"]["method"] == "ctc-mms"
     assert words[1]["alignment"]["status"] == "tentative"
     assert words[0]["start"] == 1.0
