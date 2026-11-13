@@ -346,8 +346,9 @@ python analise.py --music-path audio/Inferno.wav \
 6.1. Modern CUDA 13 PyTorch wheels do not contain kernels for this GPU.
 The loader checks the *installed* CUDA architecture list before loading
 Qwen and refuses an unsupported CUDA request rather than silently running
-on CPU. A legacy CUDA 12.x PyTorch build that actually includes `sm_61`
-is necessary, and the remaining VRAM may still be insufficient. Do not
+on CPU. A CUDA 12.x PyTorch build with Pascal-compatible kernels is necessary.
+An `sm_60` cubin can run on an `sm_61` GPU (same major architecture,
+newer device minor revision). The remaining VRAM may still be insufficient. Do not
 install FlashAttention 2 or vLLM on Pascal. Qwen's source FP16 support
 on old kernels is unverified here; use `--qwen-device cpu` if CUDA errors.
 The large model is not expected to fit in 4 GiB VRAM without additional
