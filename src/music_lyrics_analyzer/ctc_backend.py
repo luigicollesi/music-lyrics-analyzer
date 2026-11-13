@@ -95,6 +95,16 @@ def segment_emissions(log_probs: np.ndarray, words: list[dict],
     config.score_min_mean_over_L = score_window
     # CTC segmentation expects log-posterior probabilities.
     matrix, starts = prepare_token_list(config, tokens)
+    # ctc-segmentation refuses targets longer than the emission sequence.
+    # Report this before calling the decoder, rather than raising an
+    # opaque AssertionError: Audio is shorter than text!
+    if len(matrix) > len(log_probs):
+        if diagnostic is not None:
+            diagnostic.update(status="insufficient_frames",
+                              required_frames=len(matrix),
+                              available_frames=len(log_probs),
+                              deficit_frames=len(matrix)-len(log_probs))
+        return []
     timing, char_probs, _ = ctc_segmentation(config, log_probs, matrix)
     spans = determine_utterance_segments(
         config, starts, char_probs, timing, [w["text"] for w in words])
@@ -216,11 +226,30 @@ class MMSBackend:
               score_window=2):
         if end - start > 20.0:
             raise ValueError("CTC window larger than 20 seconds")
+        self.last_diagnostic = {}
         samples = audio16[max(0, int(start*16000)):int(end*16000)]
         if len(samples) < 3200:
+            self.last_diagnostic = {"status":"too_short_audio",
+                                    "samples":len(samples)}
             return []
+        # The continuous mapping is an audit artifact for the NEXT decoder,
+        # not an assertion that legacy prepare_token_list includes spaces.
+        from .phrase_tokens import tokenize_phrase,check_ctc_capacity
+        phrase_audit=None
+        try:
+            phrase_audit=tokenize_phrase(words,self.processor.tokenizer,
+                                vocabulary_size=self.model.lm_head.out_features)
+        except ValueError as exc:
+            self.last_diagnostic["phrase_tokenization_warning"]=str(exc)
         emission = self.infer(samples)
-        self.last_diagnostic = {}
+        if phrase_audit is not None:
+            self.last_diagnostic["continuous_reference"]={
+                "status":"verified",
+                "text":phrase_audit.text,
+                "token_ids":list(phrase_audit.token_ids),
+                "token_to_word":list(phrase_audit.token_to_word),
+                "diacritic_fallback":phrase_audit.used_diacritic_fallback,
+                "capacity":check_ctc_capacity(phrase_audit.token_ids,len(emission))}
         return segment_emissions(emission, words, self.processor.tokenizer,
                                  duration=len(samples)/16000.,
                                  offset=start, threshold=threshold,
