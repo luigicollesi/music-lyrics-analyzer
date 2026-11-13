@@ -31,7 +31,7 @@ def normalize_ctc(text: str) -> str:
 
 def segment_emissions(log_probs: np.ndarray, words: list[dict],
                       tokenizer, *, duration: float, offset: float = 0.,
-                      threshold: float = -2.5) -> list[Candidate]:
+                      threshold: float = -2.5, diagnostic: dict | None = None) -> list[Candidate]:
     """CTC segmentation over *known* word tokens, with strict validation.
 
     Uses token IDs instead of prepare_text to avoid silently discarding
@@ -40,7 +40,10 @@ def segment_emissions(log_probs: np.ndarray, words: list[dict],
     from ctc_segmentation import (
         CtcSegmentationParameters, prepare_token_list,
         ctc_segmentation, determine_utterance_segments)
+    if diagnostic is not None:
+        diagnostic.update({"status":"started", "words_requested":len(words), "emission_frames":len(log_probs)})
     if log_probs.ndim != 2 or not len(log_probs) or duration <= 0:
+        if diagnostic is not None: diagnostic["status"]="invalid_emissions"
         return []
     if len(words) == 0:
         return []
@@ -65,6 +68,8 @@ def segment_emissions(log_probs: np.ndarray, words: list[dict],
                 ids = possible
                 break
         if ids is None:
+            if diagnostic is not None:
+                diagnostic.update(status="unsupported_token",word_id=word.get("id"),token=word.get("text"))
             return []
         tokens.append(np.asarray(ids, dtype=np.int64))
     config = CtcSegmentationParameters()
@@ -79,22 +84,36 @@ def segment_emissions(log_probs: np.ndarray, words: list[dict],
     if len(spans) != len(words):
         return []
     result = []
+    rejected = {}
     previous = offset
     for word, (start, end, score) in zip(words, spans):
         a = float(start) + offset
         b = float(end) + offset
         confidence = float(score)
+        reason = None
         if not all(map(math.isfinite, (a, b, confidence))):
-            continue
-        if confidence < threshold or a < offset - .04 or (
-            b > offset + duration + .04) or a >= b or b-a > 5.0:
-            continue
-        if a < previous - .04:
+            reason = "nonfinite"
+        elif confidence < threshold:
+            reason = "low_score"
+        elif a < offset - .04 or b > offset + duration + .04:
+            reason = "out_of_window"
+        elif a >= b or b-a > 5.0:
+            reason = "invalid_duration"
+        elif a < previous - .04:
+            reason = "time_regression"
+        if reason:
+            rejected[reason] = rejected.get(reason, 0) + 1
             continue
         result.append(Candidate(word["id"], round(max(a, offset), 3),
                                 round(min(b, offset+duration), 3),
                                 round(confidence, 4)))
         previous = b
+    if diagnostic is not None:
+        diagnostic.update(status="ok" if result else "all_rejected",
+                          candidates=len(result), rejected=rejected,
+                          score_threshold=threshold,
+                          score_range=[round(min(float(x[2]) for x in spans),3),
+                                       round(max(float(x[2]) for x in spans),3)])
     return result
 
 
@@ -134,9 +153,11 @@ class MMSBackend:
         if len(samples) < 3200:
             return []
         emission = self.infer(samples)
+        self.last_diagnostic = {}
         return segment_emissions(emission, words, self.processor.tokenizer,
                                  duration=len(samples)/16000.,
-                                 offset=start, threshold=threshold)
+                                 offset=start, threshold=threshold,
+                                 diagnostic=self.last_diagnostic)
 
 
 def recover_ctc_gaps(backend, audio16, words: list[dict],
