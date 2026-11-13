@@ -124,6 +124,7 @@ def analyze(args):
                         key=sha256((file_hash(vocal_audio)+args.qwen_model+
                                     args.qwen_device+str(args.qwen_max_new_tokens)+
                                     str(args.qwen_gpu_memory_gb)+str(args.qwen_cpu_memory_gb)+
+                                    args.qwen_offload_granularity+
                                     'qwen-full-v2').encode()).hexdigest()[:20]
                         qwen_cache=output.parent/'.cache'/f'qwen-full-{key}.json'
                     if qwen_cache and qwen_cache.is_file():
@@ -140,7 +141,8 @@ def analyze(args):
                             gpu_memory_gb=args.qwen_gpu_memory_gb,
                             cpu_memory_gb=args.qwen_cpu_memory_gb,
                             memory_report=args.qwen_memory_report,
-                            encoder_memory_trace=args.qwen_encoder_memory_trace)
+                            encoder_memory_trace=args.qwen_encoder_memory_trace,
+                            offload_granularity=args.qwen_offload_granularity)
                         if qwen_cache:
                             qwen_cache.parent.mkdir(parents=True,exist_ok=True)
                             qwen_cache.write_text(json.dumps(qwen_full,ensure_ascii=False,indent=2),
@@ -474,6 +476,8 @@ def main(argv=None):
                    help='Dispositivo Qwen, CUDA explícito por padrão quando selecionado.')
     p.add_argument('--qwen-chunk-seconds',type=float,default=16.,
                    help='Duração da janela de transcrição Qwen (sobreposição 50%%).')
+    p.add_argument('--qwen-offload-granularity',choices=['tensor','layer'],
+                   default='tensor',help='Granularidade experimental do offloading dos pesos do decoder.')
     p.add_argument('--qwen-encoder-memory-trace',action='store_true',
                    help='Rastrear pico de VRAM no encoder de áudio Qwen e em suas camadas.')
     p.add_argument('--qwen-memory-report',action='store_true',

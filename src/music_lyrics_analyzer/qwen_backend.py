@@ -142,7 +142,8 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
                          max_new_tokens=2048, minimum_vram_gb=0.,
                          max_audio_seconds=600., gpu_memory_gb=2.5,
                          cpu_memory_gb=12., memory_report=False,
-                         encoder_memory_trace=False):
+                         encoder_memory_trace=False,
+                         offload_granularity="tensor"):
     """One Qwen transcription request for the whole audio, without cropping.
 
     The result contains text, NOT timestamped phrases. A generation output
@@ -204,7 +205,8 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
         execution_device=torch.device("cuda:0")
         from .inference_runtime.weight_manager import attach_weight_offload
         from .inference_runtime.qwen_adapter import validate_model_for_generation
-        attach_weight_offload(model.model,execution_device)
+        attach_weight_offload(model.model,execution_device,
+                              granularity=offload_granularity)
         offload_status=validate_model_for_generation(model.model)
         # The upstream Qwen wrapper uses self.model.device to place input
         # tensors; after cpu_offload that value becomes 'meta'. Expose the
@@ -250,6 +252,7 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
         "gpu_memory_budget_gb":gpu_memory_gb if device=="hybrid" else None,
         "cpu_memory_budget_gb":cpu_memory_gb if device=="hybrid" else None,
         "device_map":device_map,
+        "offload_granularity":offload_granularity if device=="streamed" else None,
         "weight_offload": ("accelerate_cpu_offload_per_forward"
                            if device=="streamed" and plan.device.startswith("cuda")
                            else "cpu_only" if device=="streamed"
