@@ -581,3 +581,35 @@ Do not enable a resident/prefetch scheduler without tests proving
 correct weight lifetimes and peak CUDA memory.
 
 Example additional flag: `--qwen-transfer-report`.
+
+## Budgeted GPU-resident weights (experimental)
+
+Use `--qwen-device resident` with `--qwen-mode full`. The mode uses
+Hugging Face Accelerate/Transformers `device_map="auto"` with an
+explicit GPU weight-placement budget. Modules assigned to CUDA stay
+resident between decoding tokens; CPU-dispatched modules are loaded on
+demand. Unlike `streamed` this reduces repeated transfers for CUDA
+resident modules, but increases baseline VRAM consumption. The selected
+`hf_device_map` and a module-placement summary are included in the
+full-ASR transcript diagnostics when inference succeeds.
+
+```bash
+python analise.py --music-path audio/Inferno.wav --lyrics-path lyrics/Inferno.md \
+  --aligner hybrid --strategy hierarchical --asr-backend qwen \
+  --qwen-mode full --qwen-model 0.6b --qwen-device resident \
+  --qwen-resident-weights-gib 1.0 --qwen-activation-reserve-gib 1.5 \
+  --qwen-cpu-memory-gb 12 --qwen-memory-report --qwen-transfer-report \
+  --ctc-device cpu --device cpu --resume --report \
+  --output analysis/qwen-full-resident.json
+```
+
+This is NOT dynamic residency eviction/prefetch. The Accelerate map is
+chosen on model loading and may not use all the requested memory.
+The activation reserve is a static constraint on the weight-placement
+budget: it does not limit the actual peak from encoder activations
+or KV cache. Full-song 332s input previously caused 1.32GB allocation
+failures even with other offload modes; this can still fail on GTX 1050
+Ti. The mode is opt-in and has not been validated on the target GPU.
+If the resident map cannot keep weights in CUDA, the summary shows
+zero CUDA modules; do not claim acceleration. For CPU-only hosts
+continue using `--qwen-device streamed` (automatically falls back to CPU).
