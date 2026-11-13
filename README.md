@@ -1,3 +1,45 @@
+## V0.6 experimental — janelas CTC por frases e candidatos auditáveis
+
+A execução híbrida agora oferece **dois modos** de recuperação acústica:
+`--ctc-window-mode phrase` (padrão experimental) planeja janelas por linha/frase,
+expande até 2,5 s as bordas de seções que começam/terminam com palavras ausentes
+sem cruzar a seção vizinha, e gera candidatos CTC **sem modificar a timeline**
+durante a inferência. Um resolvedor monotônico seleciona propostas e só então
+atribui timestamps a palavras ainda não resolvidas. O modo anterior permanece
+disponível via `--ctc-window-mode gap` para comparação.
+
+```bash
+python analise.py --music-path audio/Inferno.wav --lyrics-path lyrics/Inferno.md \
+  --aligner hybrid --strategy hierarchical --ctc-window-mode phrase \
+  --ctc-score-window 2 --ctc-threshold -2.5 --ctc-device cpu \
+  --device cpu --resume --report --lrc \
+  --output analysis/lyrics-analysis-v06.json
+```
+
+O modo por frases cria `lyrics-analysis-v06-ctc-candidates.json` ao lado do
+resultado principal, com todas as hipóteses do decodificador que chegaram ao
+estágio de scoring, inclusive as rejeitadas (e respectivos scores, janelas,
+IDs e razões), além das decisões do resolvedor. A análise contém
+`diagnostics.timeline_issues` para regredir e verificar ordenação antes de
+sincronizar palavras ao vídeo. `--lrc` regenera o arquivo a partir da mesma
+timeline; caso não solicitado e exista um LRC anterior, um aviso é emitido.
+
+`--ctc-score-window` permite testar valores 1–100 frames; alterar esse valor
+muda o significado de `--ctc-threshold`, que não é uma probabilidade
+calibrada. Teste diversas configurações contra palavras com intervalos
+anotados manualmente. O modelo CTC não prova que a letra foi cantada.
+
+`--ctc-device cpu` (padrão) permite executar Whisper com `--device cuda`
+sem carregar também o MMS 1B em uma GPU pequena. Use
+`--ctc-device inherit` ou `--ctc-device cuda` apenas após validar a
+memória disponível. O processo descarrega o Whisper antes de inicializar MMS.
+
+**Limitações atuais:** o resolvedor preserva timestamps antigos e não refaz
+a posição de âncoras automáticas potencialmente incorretas; o decoder ainda
+deriva intervalos de palavras de `prepare_token_list`, não de uma
+reconstrução fonética independente. Nenhuma meta de cobertura ou exatidão
+foi validada nesta branch com áudio real. Não mescle à main sem benchmark.
+
 ## V0.5 experimental — alinhamento acústico CTC (MMS)
 
 A nova opção `--aligner hybrid` mantém a localização e alinhamento hierárquico `stable-ts`, mas tenta preencher **lacunas** usando um modelo acústico CTC multilíngue, diretamente com a letra original. O modelo é carregado apenas quando solicitado e usa os tokens do tokenizer do idioma `por` (português). Esta primeira implementação é *grafêmica* (tokens do MMS), não um alinhador IPA/fonêmico independente.
