@@ -72,3 +72,11 @@ In hierarchical mode, `--recovery auto` performs a second word-timestamp ASR pas
 
 The output distinguishes `word-asr-exact`, `word-asr-fuzzy`, `word-asr-contextual`, and `word-asr-contextual-edge` in `words[].alignment.method`. Contextual matches have `alignment.status=tentative` and confidence null; do not treat them as acoustic proof of speech or frame-accurate timestamps. Missing ASR words stay unresolved. `--recovery none` switches this pass off. Check `diagnostics.attempts[].word_asr_recovery` and validate results against real audio before using them for VFX.
 
+
+## V0.5 experimental CTC alignment
+
+Use `--aligner hybrid --strategy hierarchical` to run the regular stable-ts alignment and attempt CTC recovery only on the remaining missing words. Install optional dependencies with `python -m pip install -e '.[align,ctc]'`; this downloads an MMS model on first use. The Portuguese language adapter is `--ctc-language por`. Keep `--aligner stable-ts` as default until accuracy benchmarks are completed. Use `--aligner ctc --section-timings sections.json` only when **every supplied section** is independently verified, at most 20 seconds long, and correctly localized.
+
+The CTC backend produces grapheme-token timing hypotheses, not verified phoneme boundaries; it cannot prove that the lyric was sung. Every `ctc-mms` word is tagged `alignment.status=tentative`; do not treat its model score as calibrated confidence. The model has high memory requirements and its default checkpoint has a noncommercial license. Optional source separation must preserve the original timeline.
+
+After each run compare outputs using `python benchmark_compare.py baseline.json candidate.json`; review newly timed words, lost timings and error in a human-annotated reference sample before enabling frame-exact animation. No automatic merge to main.
