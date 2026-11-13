@@ -27,7 +27,6 @@ def plan_phrase_windows(words, lines, *, section_start, section_end,
     """
     if not 0 <= section_start < section_end:
         return [], [{"reason":"invalid_section_window"}]
-    line_index={l["id"]:i for i,l in enumerate(lines)}
     by_line={}
     for index, word in enumerate(words):
         by_line.setdefault(word["line_id"], []).append(index)
@@ -44,8 +43,20 @@ def plan_phrase_windows(words, lines, *, section_start, section_end,
         if timed:
             left=min(float(w["start"]) for w in timed)
             right=max(float(w["end"]) for w in timed)
-            lo=max(section_start,left-padding)
-            hi=min(section_end,right+padding)
+            prefix_missing=0
+            for item in chosen:
+                if item.get("start") is not None: break
+                prefix_missing+=1
+            suffix_missing=0
+            for item in reversed(chosen):
+                if item.get("start") is not None: break
+                suffix_missing+=1
+            # More than one missing word at a boundary requires more than
+            # the standard 350 ms of context.
+            left_pad=max(padding,min(2.5,.38*prefix_missing))
+            right_pad=max(padding,min(2.5,.38*suffix_missing))
+            lo=max(section_start,left-left_pad)
+            hi=min(section_end,right+right_pad)
             if hi-lo<min_seconds:
                 center=(hi+lo)/2
                 lo=max(section_start,center-min_seconds/2)
@@ -55,8 +66,13 @@ def plan_phrase_windows(words, lines, *, section_start, section_end,
             # provide conservative boundaries; never interpolate lyric time.
             prev=[w for w in words[:first] if w.get("end") is not None]
             nxt=[w for w in words[last:] if w.get("start") is not None]
-            lo=max(section_start,float(prev[-1]["end"]) if prev else section_start)
-            hi=min(section_end,float(nxt[0]["start"]) if nxt else section_end)
+            left_anchor=float(prev[-1]["end"]) if prev else section_start
+            right_anchor=float(nxt[0]["start"]) if nxt else section_end
+            # A fully missed line may sit between identical/overlapping
+            # timestamps. Only propose an enlarged *hypothesis* region;
+            # the later resolver rejects candidates crossing known anchors.
+            lo=max(section_start,left_anchor-min(1.,.12*len(indices)))
+            hi=min(section_end,right_anchor+min(1.,.12*len(indices)))
         if hi<=lo or hi-lo>max_seconds:
             issues.append({"line_id":line["id"],"reason":"no_safe_phrase_window",
                            "window":[round(lo,3),round(hi,3)]})
