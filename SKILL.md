@@ -383,3 +383,37 @@ Do not mistake model loading or repeated `pad_token_id` messages for
 proof of a correct ASR transcript. Compare the saved Qwen chunk texts
 against the sung lyrics, then develop a window-internal localization
 algorithm if the transcript improves recognition.
+
+## Whole-song Qwen transcription experiment (default Qwen mode)
+
+`--asr-backend qwen --qwen-mode full` submits the entire mono 16-kHz song
+to a single Qwen3-ASR transcription call, with no externally imposed
+16-second windowing. The backend may still have internal audio handling.
+The result is saved to `analysis/.cache/qwen-full-*.json` when `--resume`
+is supplied, and included in output diagnostics as
+`diagnostics.qwen_asr.transcript`.
+
+Example for the target GPU:
+
+```bash
+python analise.py --music-path audio/Inferno.wav --lyrics-path lyrics/Inferno.md \
+ --aligner hybrid --strategy hierarchical --asr-backend qwen \
+ --qwen-mode full --qwen-model 0.6b --qwen-device cuda \
+ --qwen-max-new-tokens 2048 --ctc-window-mode overlap \
+ --ctc-device cpu --device cpu --resume --report \
+ --output analysis/lyrics-analysis-qwen-full.json
+```
+
+The generation token limit is a **budget**, not proof of an untruncated
+transcription. The `token_limit_risk` field is a rough warning based
+on word count, not an authoritative model stopping-reason signal.
+Inspect all text, especially the song ending; if truncated, increase
+`--qwen-max-new-tokens`. On GTX 1050 Ti, 332 seconds in one request
+may exceed available GPU memory. Explicitly retry with
+`--qwen-mode windowed` if necessary. There is NO automatic silent
+fallback or silent truncation handling.
+
+The full transcript has **no phrase timestamps**. As before, short
+Whisper speech segments supply hierarchical timing anchors. The full
+Qwen transcript is diagnostic only pending safe full-text-to-lyric
+alignment. Hence this feature does not by itself increase coverage.
