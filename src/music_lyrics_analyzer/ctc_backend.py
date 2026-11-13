@@ -6,6 +6,10 @@ lyrics are authoritative; a CTC path is a hypothesis, not proof of singing.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from hashlib import sha256
+from pathlib import Path
+import os
+import tempfile
 import math
 import unicodedata
 import numpy as np
@@ -144,11 +148,16 @@ class MMSBackend:
     """Lazy, process-local MMS model; one model load for many short windows."""
 
     def __init__(self, model_id="facebook/mms-1b-all",
-                 language="por", device="cpu"):
+                 language="por", device="cpu", cache_dir=None):
         import torch
         from transformers import AutoProcessor, Wav2Vec2ForCTC
         self.torch = torch
         self.device = device
+        self.model_id=model_id
+        self.language=language
+        self.cache_dir=Path(cache_dir) if cache_dir else None
+        if self.cache_dir:
+            self.cache_dir.mkdir(parents=True,exist_ok=True)
         self.processor = AutoProcessor.from_pretrained(
             model_id, target_lang=language)
         self.model = Wav2Vec2ForCTC.from_pretrained(
@@ -161,13 +170,40 @@ class MMSBackend:
 
     def infer(self, audio16: np.ndarray) -> np.ndarray:
         torch = self.torch
-        payload = self.processor(
-            np.asarray(audio16, dtype=np.float32), sampling_rate=16000,
-            return_tensors="pt")
+        samples=np.ascontiguousarray(audio16,dtype=np.float32)
+        path=None
+        if self.cache_dir:
+            from transformers import __version__ as transformers_version
+            h=sha256()
+            for part in (self.model_id,self.language,transformers_version,
+                         str(samples.shape),str(samples.dtype)):
+                h.update(part.encode());h.update(b"\\0")
+            h.update(samples.tobytes())
+            path=self.cache_dir/(h.hexdigest()+".npy")
+            if path.is_file():
+                try:
+                    cached=np.load(path,allow_pickle=False)
+                    if cached.ndim==2 and cached.shape[1]==self.model.lm_head.out_features:
+                        return cached
+                except (OSError,ValueError):
+                    pass
+        payload = self.processor(samples,sampling_rate=16000,
+                                 return_tensors="pt")
         payload = {k: v.to(self.device) for k, v in payload.items()}
         with torch.inference_mode():
             logits = self.model(**payload).logits[0]
-            return torch.log_softmax(logits, dim=-1).cpu().numpy()
+            result=torch.log_softmax(logits, dim=-1).cpu().numpy()
+        if path is not None:
+            # Atomic replacement avoids publishing partial cache artifacts.
+            fd,tmp=tempfile.mkstemp(prefix="ctc-",suffix=".npy",
+                                    dir=str(self.cache_dir))
+            try:
+                with os.fdopen(fd,"wb") as out:
+                    np.save(out,result,allow_pickle=False)
+                os.replace(tmp,path)
+            finally:
+                if os.path.exists(tmp):os.unlink(tmp)
+        return result
 
     def align(self, audio16, words, start, end, *, threshold=-2.5,
               score_window=2):
