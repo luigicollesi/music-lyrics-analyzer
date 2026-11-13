@@ -32,7 +32,7 @@ anotados manualmente. O modelo CTC não prova que a letra foi cantada.
 `--ctc-device cpu` (padrão) permite executar Whisper com `--device cuda`
 sem carregar também o MMS 1B em uma GPU pequena. Use
 `--ctc-device inherit` ou `--ctc-device cuda` apenas após validar a
-memória disponível. O processo descarrega o Whisper antes de inicializar MMS.
+memória disponível. O processo descarrega o Whisper antes de inicializar MMS. Com `--resume`, as emissões CTC de cada recorte são guardadas em `analysis/.cache/ctc-emissions/`, identificadas por hash de áudio, checkpoint, adaptador e versão Transformers. Alterar apenas threshold ou score window permite reutilizar a inferência para janelas idênticas.
 
 **Limitações atuais:** o resolvedor preserva timestamps antigos e não refaz
 a posição de âncoras automáticas potencialmente incorretas; o decoder ainda
