@@ -108,11 +108,34 @@ def analyze(args):
             cache_file=None
             if args.resume and manual_sections is None and asr_segments is None:
                 key=sha256((file_hash(vocal_audio)+args.model+args.language+
-                            str(args.asr_chunk_seconds)+'asr-v02').encode()).hexdigest()[:20]
+                            str(args.asr_chunk_seconds)+args.asr_backend+
+                            (args.qwen_model if args.asr_backend=='qwen' else '')+
+                            str(args.qwen_chunk_seconds if args.asr_backend=='qwen' else '')+'asr-v03').encode()).hexdigest()[:20]
                 cache_file=output.parent/'.cache'/f'asr-{key}.json'
                 if cache_file.is_file():
                     asr_segments=json.loads(cache_file.read_text(encoding='utf-8'))
                     print('  Reconhecimento auxiliar recuperado do cache.',file=sys.stderr)
+            if args.asr_backend=='qwen' and manual_sections is None:
+                if asr_segments is None:
+                    from .qwen_backend import transcribe_qwen_windows,MODELS
+                    print('  Executando Qwen3-ASR para localização auxiliar...',file=sys.stderr)
+                    asr_segments, qwen_plan=transcribe_qwen_windows(
+                        audio16,model_size=args.qwen_model,
+                        device=args.qwen_device,
+                        chunk_seconds=args.qwen_chunk_seconds,
+                        hop_seconds=args.qwen_chunk_seconds/2,
+                        minimum_vram_gb=args.qwen_min_vram_gb)
+                    diagnostic['qwen_asr']={
+                        'model':MODELS[args.qwen_model],
+                        'device':qwen_plan.device,
+                        'gpu_name':qwen_plan.name,
+                        'segments':len(asr_segments),
+                        'temporal_precision':'chunk_only'}
+                else:
+                    diagnostic['qwen_asr']={
+                        'model':args.qwen_model,'segments':len(asr_segments),
+                        'status':'reused_supplied_or_cached_asr'}
+            qwen_diagnostic=diagnostic.get('qwen_asr')
             diagnostic=hierarchical_align(
                 model,audio16,words,lines,language=args.language,duration=duration,
                 section_timings=manual_sections,asr_segments=asr_segments,
@@ -124,6 +147,8 @@ def analyze(args):
                 cache_file.parent.mkdir(parents=True,exist_ok=True)
                 cache_file.write_text(json.dumps(diagnostic['asr_segments'],
                                                  ensure_ascii=False),encoding='utf-8')
+            if qwen_diagnostic is not None:
+                diagnostic['qwen_asr']=qwen_diagnostic
             method='stable-ts-hierarchical'
             unresolved=sum(w['start'] is None for w in words)
             if args.aligner == 'hybrid':
@@ -387,6 +412,16 @@ def main(argv=None):
     p.add_argument('--ctc-threshold',type=float,default=-2.5,help='Limite de score acústico CTC (log-probabilidade); não é confiança calibrada.')
     p.add_argument('--strategy',choices=['hierarchical','legacy'],default='hierarchical',
                    help='Localização hierárquica (padrão) ou alinhamento global anterior.')
+    p.add_argument('--asr-backend',choices=['whisper','qwen'],
+                   default='whisper',help='Reconhecimento auxiliar para localizar seções.')
+    p.add_argument('--qwen-model',choices=['0.6b','1.7b'],default='0.6b',
+                   help='Modelo Qwen3-ASR opcional; 1.7b exige mais memória.')
+    p.add_argument('--qwen-device',choices=['cuda','cpu','auto'],default='cuda',
+                   help='Dispositivo Qwen, CUDA explícito por padrão quando selecionado.')
+    p.add_argument('--qwen-chunk-seconds',type=float,default=16.,
+                   help='Duração da janela de transcrição Qwen (sobreposição 50%%).')
+    p.add_argument('--qwen-min-vram-gb',type=float,default=0.,
+                   help='Orçamento mínimo de VRAM exigido antes de carregar Qwen.')
     p.add_argument('--asr-chunk-seconds',type=float,default=30.,help='Janela do reconhecimento auxiliar em segundos.')
     p.add_argument('--max-section-seconds',type=float,default=150.,help='Duração máxima da janela de alinhamento de uma seção.')
     p.add_argument('--max-local-seconds',type=float,default=35.,help='Duração máxima dos subtrechos de alinhamento.')
