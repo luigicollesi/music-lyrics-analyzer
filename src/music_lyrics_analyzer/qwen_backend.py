@@ -145,7 +145,15 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
         from qwen_asr import Qwen3ASRModel
     except ImportError as exc:
         raise RuntimeError("Install optional Qwen backend: pip install -e '.[qwen]'") from exc
-    if device=="hybrid":
+    if device=="streamed":
+        # Genuine full-model per-forward parameter streaming: weights live
+        # in RAM and Accelerate moves individual module weights to CUDA
+        # when executed, then removes them after each forward.
+        from accelerate import cpu_offload
+        plan=choose_device(torch,"cuda",minimum_vram_gb=minimum_vram_gb)
+        dtype=torch.float16
+        placement=dict(device_map="cpu",low_cpu_mem_usage=True)
+    elif device=="hybrid":
         if not 0.5<=gpu_memory_gb<=64 or not 1<=cpu_memory_gb<=1024:
             raise ValueError("Invalid hybrid GPU or CPU memory budget.")
         try:
@@ -167,6 +175,11 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
     model=Qwen3ASRModel.from_pretrained(
         MODELS[model_size],dtype=dtype,**placement,
         max_inference_batch_size=1,max_new_tokens=max_new_tokens)
+    if device=="streamed":
+        cpu_offload(model.model,execution_device=torch.device("cuda:0"))
+        # The official Qwen ASR wrapper stores its inference device at
+        # initialization. Refresh it after adding Accelerate hooks.
+        model.device=torch.device("cuda:0")
     device_map=getattr(model.model,"hf_device_map",None)
     if plan.device.startswith("cuda"):
         torch.cuda.reset_peak_memory_stats(0)
@@ -175,7 +188,7 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
     except torch.cuda.OutOfMemoryError as exc:
         raise RuntimeError(
             "Qwen full-audio inference exceeded CUDA VRAM. "
-            "Hybrid/offload does not eliminate audio-encoder activations. "
+            "Weight streaming does not eliminate audio-encoder activations. "
             "Retry --qwen-mode windowed or --qwen-device cpu."
         ) from exc
     if not result or not str(result[0].text).strip():
@@ -183,10 +196,12 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
     text=str(result[0].text).strip()
     return {
         "mode":"full","text":text,"duration_seconds":round(duration,3),
-        "model":MODELS[model_size],"device":device if device=="hybrid" else plan.device,
+        "model":MODELS[model_size],"device":device if device in ("hybrid","streamed") else plan.device,
         "gpu_memory_budget_gb":gpu_memory_gb if device=="hybrid" else None,
         "cpu_memory_budget_gb":cpu_memory_gb if device=="hybrid" else None,
         "device_map":device_map,
+        "weight_offload": "accelerate_cpu_offload_per_forward" if device=="streamed"
+                          else "static_device_map",
         "peak_gpu_allocated_gb":round(torch.cuda.max_memory_allocated(0)/1024**3,3)
             if plan.device.startswith("cuda") else None,
         "max_new_tokens":max_new_tokens,
