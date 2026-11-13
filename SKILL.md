@@ -450,3 +450,31 @@ process the full song in one call. If it OOMs, use
 `--qwen-device cuda --qwen-mode windowed` for CUDA batches.
 No automatic fallback; no claims of verified real-device execution.
 The cache key distinguishes full mode and GPU/CPU budget settings.
+
+## True parameter streaming: `--qwen-device streamed`
+
+With `--qwen-mode full --qwen-device streamed`, the Qwen3-ASR model is
+initially loaded in host RAM, then `accelerate.cpu_offload(model.model,
+execution_device="cuda:0")` attaches per-forward hooks that copy module
+weights to the GPU when needed and offload them again after each forward.
+Unlike static `device_map="auto"`, this streams parameters. The model's
+wrapper input device is refreshed to CUDA after hook installation.
+
+```bash
+python analise.py --music-path audio/Inferno.wav --lyrics-path lyrics/Inferno.md \
+ --aligner hybrid --strategy hierarchical --asr-backend qwen \
+ --qwen-mode full --qwen-model 0.6b --qwen-device streamed \
+ --qwen-max-new-tokens 2048 --ctc-window-mode overlap \
+ --ctc-device cpu --device cpu --resume --report \
+ --output analysis/qwen-full-streamed.json
+```
+
+This is NOT an activation offload strategy. The 332-second input
+previously required an additional ~1.32 GiB CUDA allocation even after
+the model was loaded; the same allocation may still fail on a 4 GiB
+GPU. Streaming parameters can be slow on PCIe and the Qwen wrapper
+may assume unsupported device placement for some internal layers.
+Do not claim success without actual hardware validation. If `streamed`
+still OOMs, **full CPU inference is the supported fallback preserving
+whole-song transcription**; a deeper architecture-specific refactor
+would be needed to offload or tile audio-encoder activations.
