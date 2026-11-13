@@ -117,3 +117,54 @@ def transcribe_qwen_windows(audio16, *, model_size="0.6b",
                        "time_precision":"chunk_only"})
         if progress:progress(window,phrase)
     return output,plan
+
+
+def transcribe_qwen_full(audio16, *, model_size="0.6b",
+                         device="cuda", language="Portuguese",
+                         max_new_tokens=2048, minimum_vram_gb=0.,
+                         max_audio_seconds=600.):
+    """One Qwen transcription request for the whole audio, without cropping.
+
+    The result contains text, NOT timestamped phrases. A generation output
+    near the requested token cap is flagged for review rather than trusted.
+    OOM errors are propagated; the caller may explicitly retry windowed mode.
+    """
+    if model_size not in MODELS:
+        raise ValueError("Unknown Qwen model size.")
+    if not 128 <= max_new_tokens <= 8192:
+        raise ValueError("max_new_tokens must be between 128 and 8192.")
+    samples=np.asarray(audio16,dtype=np.float32)
+    if samples.ndim != 1 or samples.size < 16000:
+        raise ValueError("Expected mono audio with at least 1 second at 16kHz.")
+    duration=len(samples)/16000.
+    if duration > max_audio_seconds:
+        raise ValueError("Full ASR audio exceeds the configured safety duration.")
+    try:
+        import torch
+        from qwen_asr import Qwen3ASRModel
+    except ImportError as exc:
+        raise RuntimeError("Install optional Qwen backend: pip install -e '.[qwen]'") from exc
+    plan=choose_device(torch,device,minimum_vram_gb=minimum_vram_gb)
+    dtype=torch.float16 if plan.device.startswith("cuda") else torch.float32
+    model=Qwen3ASRModel.from_pretrained(
+        MODELS[model_size],dtype=dtype,device_map=plan.device,
+        max_inference_batch_size=1,max_new_tokens=max_new_tokens)
+    try:
+        result=model.transcribe(audio=(samples,16000),language=language)
+    except torch.cuda.OutOfMemoryError as exc:
+        raise RuntimeError(
+            "Qwen full-audio inference exceeded CUDA VRAM. "
+            "Retry with --qwen-mode windowed or --qwen-device cpu."
+        ) from exc
+    if not result or not str(result[0].text).strip():
+        raise RuntimeError("Qwen full-audio returned no transcription.")
+    text=str(result[0].text).strip()
+    return {
+        "mode":"full","text":text,"duration_seconds":round(duration,3),
+        "model":MODELS[model_size],"device":plan.device,
+        "max_new_tokens":max_new_tokens,
+        "word_count":len(text.split()),
+        "token_limit_risk":len(text.split()) >= max_new_tokens//3,
+        "time_precision":"none",
+        "status":"transcribed_unverified",
+    },plan
