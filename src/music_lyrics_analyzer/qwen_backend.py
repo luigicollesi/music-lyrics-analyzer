@@ -143,7 +143,9 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
                          max_audio_seconds=600., gpu_memory_gb=2.5,
                          cpu_memory_gb=12., memory_report=False,
                          encoder_memory_trace=False,
-                         offload_granularity="tensor", transfer_report=False):
+                         offload_granularity="tensor", transfer_report=False,
+                         resident_gpu_weights_gib=1.0,
+                         activation_reserve_gib=1.5):
     """One Qwen transcription request for the whole audio, without cropping.
 
     The result contains text, NOT timestamped phrases. A generation output
@@ -168,7 +170,16 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
     from .inference_runtime.memory_profiler import MemoryProfiler
     profiler=MemoryProfiler(torch,enabled=memory_report)
     profiler.mark("before_model_load")
-    if device=="streamed":
+    if device=="resident":
+        from .inference_runtime.residency_manager import budget_for_residency
+        plan=choose_device(torch,"cuda",minimum_vram_gb=minimum_vram_gb)
+        placement=budget_for_residency(
+            physical_vram_gib=plan.total_vram_gb,
+            weights_gib=resident_gpu_weights_gib,
+            reserve_gib=activation_reserve_gib,
+            cpu_memory_gib=cpu_memory_gb)
+        dtype=torch.float16
+    elif device=="streamed":
         # Genuine full-model per-forward parameter streaming: weights live
         # in RAM and Accelerate moves individual module weights to CUDA
         # when executed, then removes them after each forward.
@@ -216,6 +227,8 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
         model.device=execution_device
     profiler.mark("after_offload_setup")
     device_map=getattr(model.model,"hf_device_map",None)
+    from .inference_runtime.residency_manager import residency_summary
+    placement_summary=residency_summary(device_map)
     if plan.device.startswith("cuda"):
         torch.cuda.reset_peak_memory_stats(0)
     from contextlib import nullcontext
@@ -257,8 +270,10 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
     text=str(result[0].text).strip()
     return {
         "mode":"full","text":text,"duration_seconds":round(duration,3),
-        "model":MODELS[model_size],"device":device if device in ("hybrid","streamed") else plan.device,
-        "gpu_memory_budget_gb":gpu_memory_gb if device=="hybrid" else None,
+        "model":MODELS[model_size],"device":device if device in ("hybrid","streamed","resident") else plan.device,
+        "gpu_memory_budget_gb":(resident_gpu_weights_gib if device=="resident" else gpu_memory_gb if device=="hybrid" else None),
+        "activation_reserve_gb":activation_reserve_gib if device=="resident" else None,
+        "residency_summary":placement_summary if device=="resident" else None,
         "cpu_memory_budget_gb":cpu_memory_gb if device=="hybrid" else None,
         "device_map":device_map,
         "offload_granularity":offload_granularity if device=="streamed" else None,
