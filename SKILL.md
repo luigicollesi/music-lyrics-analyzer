@@ -417,3 +417,36 @@ The full transcript has **no phrase timestamps**. As before, short
 Whisper speech segments supply hierarchical timing anchors. The full
 Qwen transcript is diagnostic only pending safe full-text-to-lyric
 alignment. Hence this feature does not by itself increase coverage.
+
+## Experimental CPU/GPU offloading for full-song Qwen on Pascal
+
+`--qwen-device hybrid` uses Hugging Face Accelerate via
+`Qwen3ASRModel.from_pretrained(..., device_map="auto",
+max_memory={0:"2560MiB","cpu":"12288MiB"})`. The Qwen wrapper forwards
+these arguments to Transformers AutoModel, so this caps model **weight
+placement**; it is not an overall CUDA usage limit. The default GPU
+budget is 2.5 GiB, RAM budget 12 GiB. Tune with
+`--qwen-gpu-memory-gb` and `--qwen-cpu-memory-gb`.
+
+```bash
+python analise.py --music-path audio/Inferno.wav --lyrics-path lyrics/Inferno.md \
+ --aligner hybrid --strategy hierarchical --asr-backend qwen \
+ --qwen-mode full --qwen-model 0.6b --qwen-device hybrid \
+ --qwen-gpu-memory-gb 2.5 --qwen-cpu-memory-gb 12 \
+ --qwen-max-new-tokens 2048 --ctc-window-mode overlap \
+ --ctc-device cpu --device cpu --resume --report \
+ --output analysis/lyrics-analysis-qwen-hybrid.json
+```
+
+**Experimental limitation:** The official Qwen ASR wrapper assumes one
+model device for audio inputs and exposes the underlying model's
+`hf_device_map`. Some mixed CPU/GPU placement configurations may fail
+during audio encoder or generation because of cross-device tensors.
+Most importantly, the previous 1.32 GiB CUDA allocation for a 332-second
+input can still occur: weight offloading does not offload intermediate
+activations automatically. A 4 GiB Pascal GPU may remain unable to
+process the full song in one call. If it OOMs, use
+`--qwen-device cpu --qwen-mode full` for the complete transcript or
+`--qwen-device cuda --qwen-mode windowed` for CUDA batches.
+No automatic fallback; no claims of verified real-device execution.
+The cache key distinguishes full mode and GPU/CPU budget settings.
