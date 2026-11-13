@@ -142,7 +142,8 @@ def analyze(args):
                             cpu_memory_gb=args.qwen_cpu_memory_gb,
                             memory_report=args.qwen_memory_report,
                             encoder_memory_trace=args.qwen_encoder_memory_trace,
-                            offload_granularity=args.qwen_offload_granularity)
+                            offload_granularity=args.qwen_offload_granularity,
+                            transfer_report=args.qwen_transfer_report)
                         if qwen_cache:
                             qwen_cache.parent.mkdir(parents=True,exist_ok=True)
                             qwen_cache.write_text(json.dumps(qwen_full,ensure_ascii=False,indent=2),
@@ -476,6 +477,8 @@ def main(argv=None):
                    help='Dispositivo Qwen, CUDA explícito por padrão quando selecionado.')
     p.add_argument('--qwen-chunk-seconds',type=float,default=16.,
                    help='Duração da janela de transcrição Qwen (sobreposição 50%%).')
+    p.add_argument('--qwen-transfer-report',action='store_true',
+                   help='Medir chamadas e volume estimado de offloading Accelerate em tempo real.')
     p.add_argument('--qwen-offload-granularity',choices=['tensor','layer'],
                    default='tensor',help='Granularidade experimental do offloading dos pesos do decoder.')
     p.add_argument('--qwen-encoder-memory-trace',action='store_true',

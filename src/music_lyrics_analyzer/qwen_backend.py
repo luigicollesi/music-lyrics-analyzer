@@ -143,7 +143,7 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
                          max_audio_seconds=600., gpu_memory_gb=2.5,
                          cpu_memory_gb=12., memory_report=False,
                          encoder_memory_trace=False,
-                         offload_granularity="tensor"):
+                         offload_granularity="tensor", transfer_report=False):
     """One Qwen transcription request for the whole audio, without cropping.
 
     The result contains text, NOT timestamped phrases. A generation output
@@ -219,6 +219,13 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
     if plan.device.startswith("cuda"):
         torch.cuda.reset_peak_memory_stats(0)
     from contextlib import nullcontext
+    if transfer_report:
+        from .inference_runtime.transfer_profiler import TransferProfiler
+        transfer_profiler=TransferProfiler()
+        transfer_context=transfer_profiler.observe()
+    else:
+        transfer_profiler=None
+        transfer_context=nullcontext()
     if encoder_memory_trace:
         from .inference_runtime.encoder_profiler import EncoderMemoryTrace
         encoder_trace=EncoderMemoryTrace(torch)
@@ -227,13 +234,15 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
         encoder_trace=None
         tracing=nullcontext()
     try:
-        with tracing:
+        with tracing, transfer_context:
             result=model.transcribe(audio=(samples,16000),language=language)
     except torch.cuda.OutOfMemoryError as exc:
         profiler.mark("oom_during_transcribe")
         import json
         details=(" Memory checkpoints: "+
                  json.dumps(profiler.to_dict(),ensure_ascii=False)) if memory_report else ""
+        if transfer_profiler is not None:
+            details+=" Transfer report: "+json.dumps(transfer_profiler.report())
         if encoder_trace is not None:
             details+=" Encoder trace: "+json.dumps(
                 encoder_trace.to_dict(),ensure_ascii=False)
@@ -263,6 +272,7 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
         "word_count":len(text.split()),
         "token_limit_risk":len(text.split()) >= max_new_tokens//3,
         "memory_report":profiler.to_dict() if memory_report else None,
+        "transfer_report":transfer_profiler.report() if transfer_profiler else None,
         "encoder_memory_trace":encoder_trace.to_dict() if encoder_trace is not None else None,
         "offload_integrity":offload_status if device=="streamed" and plan.device.startswith("cuda") else None,
         "time_precision":"none",
