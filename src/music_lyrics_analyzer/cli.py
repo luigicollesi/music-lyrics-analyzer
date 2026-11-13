@@ -163,6 +163,7 @@ def analyze(args):
                         'attempts':len(recovery_report['attempts']),
                         'candidate_count':len(recovery_report['candidates']),
                         'resolver_accepted':recovery_report['resolver']['accepted_count'],
+                        'phrase_conflicts':recovery_report['phrase_conflicts'],
                         'model_integrity':ctc.integrity.to_dict()}
                     diagnostic.setdefault('attempts',[]).extend(
                         {'ctc_phrase':item}
@@ -179,6 +180,7 @@ def analyze(args):
                         'audio_sha256':file_hash(music),
                         'model_integrity':ctc.integrity.to_dict(),
                         'candidates':recovery_report['candidates'],
+                        'phrase_conflicts':recovery_report['phrase_conflicts'],
                         'resolver':recovery_report['resolver']},
                         ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
                     print(f'  CTC candidatos: {candidate_path}',file=sys.stderr)
