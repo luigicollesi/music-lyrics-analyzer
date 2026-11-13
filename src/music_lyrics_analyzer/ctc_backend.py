@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
-import re
 import unicodedata
 import numpy as np
 
@@ -31,7 +30,8 @@ def normalize_ctc(text: str) -> str:
 
 def segment_emissions(log_probs: np.ndarray, words: list[dict],
                       tokenizer, *, duration: float, offset: float = 0.,
-                      threshold: float = -2.5, diagnostic: dict | None = None) -> list[Candidate]:
+                      threshold: float = -2.5, diagnostic: dict | None = None,
+                      score_window: int = 2) -> list[Candidate]:
     """CTC segmentation over *known* word tokens, with strict validation.
 
     Uses token IDs instead of prepare_text to avoid silently discarding
@@ -86,7 +86,9 @@ def segment_emissions(log_probs: np.ndarray, words: list[dict],
     config.char_list = char_list
     config.blank = int(blank_id)
     config.index_duration = float(duration) / len(log_probs)
-    config.score_min_mean_over_L = 2
+    if not 1 <= score_window <= 100:
+        raise ValueError('CTC score window must be between 1 and 100 frames')
+    config.score_min_mean_over_L = score_window
     # CTC segmentation expects log-posterior probabilities.
     matrix, starts = prepare_token_list(config, tokens)
     timing, char_probs, _ = ctc_segmentation(config, log_probs, matrix)
@@ -97,6 +99,7 @@ def segment_emissions(log_probs: np.ndarray, words: list[dict],
     result = []
     rejected = {}
     previous = offset
+    candidate_records = []
     for word, (start, end, score) in zip(words, spans):
         a = float(start) + offset
         b = float(end) + offset
@@ -112,6 +115,13 @@ def segment_emissions(log_probs: np.ndarray, words: list[dict],
             reason = "invalid_duration"
         elif a < previous - .04:
             reason = "time_regression"
+        candidate_records.append({
+            "word_id":word["id"],"text":word["text"],
+            "start":round(a,4) if math.isfinite(a) else None,
+            "end":round(b,4) if math.isfinite(b) else None,
+            "score":round(confidence,4) if math.isfinite(confidence) else None,
+            "status":"rejected" if reason else "candidate",
+            "rejection_reason":reason})
         if reason:
             rejected[reason] = rejected.get(reason, 0) + 1
             continue
@@ -122,6 +132,8 @@ def segment_emissions(log_probs: np.ndarray, words: list[dict],
     if diagnostic is not None:
         diagnostic.update(status="ok" if result else "all_rejected",
                           candidates=len(result), rejected=rejected,
+                          candidate_records=candidate_records,
+                          score_window=score_window,
                           score_threshold=threshold,
                           score_range=[round(min(float(x[2]) for x in spans),3),
                                        round(max(float(x[2]) for x in spans),3)])
@@ -157,7 +169,8 @@ class MMSBackend:
             logits = self.model(**payload).logits[0]
             return torch.log_softmax(logits, dim=-1).cpu().numpy()
 
-    def align(self, audio16, words, start, end, *, threshold=-2.5):
+    def align(self, audio16, words, start, end, *, threshold=-2.5,
+              score_window=2):
         if end - start > 20.0:
             raise ValueError("CTC window larger than 20 seconds")
         samples = audio16[max(0, int(start*16000)):int(end*16000)]
@@ -168,6 +181,7 @@ class MMSBackend:
         return segment_emissions(emission, words, self.processor.tokenizer,
                                  duration=len(samples)/16000.,
                                  offset=start, threshold=threshold,
+                                 score_window=score_window,
                                  diagnostic=self.last_diagnostic)
 
 
