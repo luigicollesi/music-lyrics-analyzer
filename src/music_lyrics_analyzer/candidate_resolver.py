@@ -71,7 +71,38 @@ def resolve_candidates(words, candidates, *, maximum_overlap=.04,
         if word.get("start") is None and word["id"] not in accepted and not any(
                 record["word_id"]==word["id"] for record in decisions):
             decisions.append({"word_id":word["id"],"status":"unresolved"})
+    # Audit the *second* stage independently from decoder rejections.
+    position={word["id"]:i for i,word in enumerate(words)}
+    candidate_decisions=[]
+    for candidate in candidates:
+        word_id=candidate.get("word_id")
+        idx=position.get(word_id)
+        if idx is None:
+            reason="unknown_word"
+        elif candidate.get("status")=="rejected":
+            reason="decoder_rejected"
+        elif word_id in accepted and candidate is accepted[word_id]:
+            reason="accepted"
+        elif words[idx].get("start") is not None:
+            reason="already_aligned"
+        elif candidate.get("start") is None or candidate.get("end") is None:
+            reason="invalid_interval"
+        else:
+            left=next((w["end"] for w in reversed(words[:idx])
+                       if w.get("end") is not None),None)
+            right=next((w["start"] for w in words[idx+1:]
+                        if w.get("start") is not None),None)
+            if ((left is not None and float(candidate["start"])<float(left)-maximum_overlap)
+                or (right is not None and float(candidate["end"])>float(right)+maximum_overlap)):
+                reason="anchor_conflict"
+            else:
+                reason="not_selected"
+        candidate_decisions.append({
+            "word_id":word_id,
+            "window_id":candidate.get("window_id"),
+            "resolution":reason})
     return {"accepted":accepted,"decisions":decisions,
+            "candidate_decisions":candidate_decisions,
             "accepted_count":len(accepted)}
 
 
