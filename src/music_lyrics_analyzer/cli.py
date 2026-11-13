@@ -48,6 +48,8 @@ def separate_vocals(audio:Path,temp:Path,device:str):
 def analyze(args):
     music=Path(args.music_path).expanduser().resolve()
     lyrics_file=Path(args.lyrics_path).expanduser().resolve()
+    if args.aligner=='hybrid' and args.strategy!='hierarchical':
+        raise ValueError('--aligner hybrid exige --strategy hierarchical.')
     if args.aligner=='ctc' and not args.section_timings:
         raise ValueError('--aligner ctc exige --section-timings; sem âncoras locais, o modelo pode alinhar um refrão à ocorrência errada.')
     if not music.is_file():raise FileNotFoundError('Áudio inexistente: '+str(music))
