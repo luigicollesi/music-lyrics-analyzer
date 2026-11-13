@@ -62,7 +62,7 @@ def propose_missing_line_locations(words,lines,asr_segments,*,duration,
         if lid in anchors:
             continue
         ref=tokens(line["text"])
-        if len(ref)<4:
+        if len(ref)<5:
             issues.append({"line_id":lid,"reason":"reference_too_short"})
             continue
         # Neighboring anchored lyric lines are order constraints. Do not
