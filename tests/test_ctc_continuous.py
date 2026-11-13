@@ -78,3 +78,35 @@ def test_continuous_segment_records_rejections_but_not_confidence(monkeypatch):
     assert records[0]["start"]==7.02
     assert records[0]["end"]==7.06
     assert "confidence" not in records[0]
+
+
+def test_continuous_mode_collects_candidates_without_modifying_words():
+    from music_lyrics_analyzer.core import parse_lyrics
+    from music_lyrics_analyzer.phrase_recovery import phrase_ctc_recovery
+    words,lines=parse_lyrics("[Verse]\nFoi uma vez")
+    for idx,time in ((1,1.4),(2,1.8)):
+        words[idx].update(start=time,end=time+.2)
+    before=[w.get("start") for w in words]
+
+    class Fake:
+        def align_continuous(self, audio, selected, start, end, *,
+                             threshold, score_window):
+            self.last_diagnostic={
+                "status":"ok",
+                "token_spans":[{"index":0,"word_id":selected[0]["id"],
+                               "start_frame":3,"end_frame":9}],
+                "candidate_records":[{
+                    "word_id":selected[0]["id"],
+                    "start":.8,"end":1.1,"score":-.3,
+                    "status":"candidate","rejection_reason":None}]}
+            return []
+
+    result=phrase_ctc_recovery(
+        Fake(),np.zeros(16000*5),words,lines,
+        [{"id":words[0]["section_id"],"window":[.2,5.]}],
+        mode="continuous",commit=False)
+    assert result["committed"] is False
+    assert result["recovered"]==0
+    assert result["candidates"]
+    assert [w.get("start") for w in words]==before
+    assert any("token_spans" in a for a in result["attempts"])
