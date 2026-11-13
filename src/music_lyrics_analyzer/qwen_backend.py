@@ -141,7 +141,7 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
                          device="cuda", language="Portuguese",
                          max_new_tokens=2048, minimum_vram_gb=0.,
                          max_audio_seconds=600., gpu_memory_gb=2.5,
-                         cpu_memory_gb=12.):
+                         cpu_memory_gb=12., memory_report=False):
     """One Qwen transcription request for the whole audio, without cropping.
 
     The result contains text, NOT timestamped phrases. A generation output
@@ -163,6 +163,9 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
         from qwen_asr import Qwen3ASRModel
     except ImportError as exc:
         raise RuntimeError("Install optional Qwen backend: pip install -e '.[qwen]'") from exc
+    from .inference_runtime.memory_profiler import MemoryProfiler
+    profiler=MemoryProfiler(torch,enabled=memory_report)
+    profiler.mark("before_model_load")
     if device=="streamed":
         # Genuine full-model per-forward parameter streaming: weights live
         # in RAM and Accelerate moves individual module weights to CUDA
@@ -195,26 +198,36 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
     model=Qwen3ASRModel.from_pretrained(
         MODELS[model_size],dtype=dtype,**placement,
         max_inference_batch_size=1,max_new_tokens=max_new_tokens)
+    profiler.mark("after_model_load")
     if device=="streamed" and plan.device.startswith("cuda"):
         execution_device=torch.device("cuda:0")
-        cpu_offload(model.model,execution_device=execution_device)
+        from .inference_runtime.weight_manager import attach_weight_offload
+        from .inference_runtime.qwen_adapter import validate_model_for_generation
+        attach_weight_offload(model.model,execution_device)
+        offload_status=validate_model_for_generation(model.model)
         # The upstream Qwen wrapper uses self.model.device to place input
         # tensors; after cpu_offload that value becomes 'meta'. Expose the
         # real execution device without changing the underlying HF model.
         model.model=_QwenOffloadDeviceProxy(
             model.model,execution_device,torch.float16)
         model.device=execution_device
+    profiler.mark("after_offload_setup")
     device_map=getattr(model.model,"hf_device_map",None)
     if plan.device.startswith("cuda"):
         torch.cuda.reset_peak_memory_stats(0)
     try:
         result=model.transcribe(audio=(samples,16000),language=language)
     except torch.cuda.OutOfMemoryError as exc:
+        profiler.mark("oom_during_transcribe")
+        import json
+        details=(" Memory checkpoints: "+
+                 json.dumps(profiler.to_dict(),ensure_ascii=False)) if memory_report else ""
         raise RuntimeError(
             "Qwen full-audio inference exceeded CUDA VRAM. "
             "Weight streaming does not eliminate audio-encoder activations. "
-            "Retry --qwen-mode windowed or --qwen-device cpu."
+            "Retry --qwen-mode windowed or --qwen-device cpu." + details
         ) from exc
+    profiler.mark("after_transcribe")
     if not result or not str(result[0].text).strip():
         raise RuntimeError("Qwen full-audio returned no transcription.")
     text=str(result[0].text).strip()
@@ -233,6 +246,8 @@ def transcribe_qwen_full(audio16, *, model_size="0.6b",
         "max_new_tokens":max_new_tokens,
         "word_count":len(text.split()),
         "token_limit_risk":len(text.split()) >= max_new_tokens//3,
+        "memory_report":profiler.to_dict() if memory_report else None,
+        "offload_integrity":offload_status if device=="streamed" and plan.device.startswith("cuda") else None,
         "time_precision":"none",
         "status":"transcribed_unverified",
     },plan

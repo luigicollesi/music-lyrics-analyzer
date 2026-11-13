@@ -138,7 +138,8 @@ def analyze(args):
                             max_new_tokens=args.qwen_max_new_tokens,
                             minimum_vram_gb=args.qwen_min_vram_gb,
                             gpu_memory_gb=args.qwen_gpu_memory_gb,
-                            cpu_memory_gb=args.qwen_cpu_memory_gb)
+                            cpu_memory_gb=args.qwen_cpu_memory_gb,
+                            memory_report=args.qwen_memory_report)
                         if qwen_cache:
                             qwen_cache.parent.mkdir(parents=True,exist_ok=True)
                             qwen_cache.write_text(json.dumps(qwen_full,ensure_ascii=False,indent=2),
@@ -472,6 +473,8 @@ def main(argv=None):
                    help='Dispositivo Qwen, CUDA explícito por padrão quando selecionado.')
     p.add_argument('--qwen-chunk-seconds',type=float,default=16.,
                    help='Duração da janela de transcrição Qwen (sobreposição 50%%).')
+    p.add_argument('--qwen-memory-report',action='store_true',
+                   help='Registrar checkpoints de consumo CPU/CUDA na inferência full.')
     p.add_argument('--qwen-gpu-memory-gb',type=float,default=2.5,
                    help='Orçamento de VRAM para offloading em modo full/hybrid.')
     p.add_argument('--qwen-cpu-memory-gb',type=float,default=12.,
