@@ -62,6 +62,21 @@ def phrase_ctc_recovery(backend, audio16, words, lines, sections, *,
                 entry["status"]=diagnostic.get("status","unknown")
                 entry["rejections"]=diagnostic.get("rejected",{})
                 entry["candidates"]=len(records)
+                if diagnostic.get("continuous_reference") is not None:
+                    ref=diagnostic["continuous_reference"]
+                    entry["continuous_reference"]={
+                        "status":ref["status"],
+                        "token_count":len(ref["token_ids"]),
+                        "diacritic_fallback":ref["diacritic_fallback"],
+                        "capacity":ref["capacity"]}
+                if diagnostic.get("phrase_tokenization_warning"):
+                    entry["phrase_tokenization_warning"]=(
+                        diagnostic["phrase_tokenization_warning"])
+                if diagnostic.get("status")=="insufficient_frames":
+                    entry["capacity"]={
+                        "required_frames":diagnostic.get("required_frames"),
+                        "available_frames":diagnostic.get("available_frames"),
+                        "deficit_frames":diagnostic.get("deficit_frames")}
                 for record in records:
                     if len(all_candidates)>=max_records:
                         raise ValueError("CTC candidate record limit reached")

@@ -169,3 +169,46 @@ noncommercial license. Record model revision or content digest, dependency
 versions and audio hash in production manifests. Running with `--resume`
 does not by itself prove that a cache entry is valid for a changed model
 revision. Do not modify or upload private audio without authorization.
+
+## V1 PR2 — phrase tokenization and frame-capacity preflight
+
+The optional `phrase_tokens.py` audit tokenizes the **entire normalized
+phrase** using the active MMS Portuguese vocabulary, then verifies that the
+word-by-word + explicit delimiter reconstruction yields precisely the same
+token ID sequence. It preserves each original word occurrence ID and
+associates delimiter tokens with `null`, not a neighboring word. If the
+tokenizer handles phrase boundaries differently, this audit **fails closed**
+instead of fabricating a token-to-word mapping. Diacritics are only removed
+as an explicit fallback when the active vocabulary cannot encode the
+original spelling.
+
+A separate CTC frame preflight detects references requiring more frames
+than a decoder received; `insufficient_frames` is a structural condition,
+not evidence of missing singing. `phrase_windows.py` expands search
+regions for completely missing lines when sufficient section context
+exists; otherwise records `insufficient_section_context`. It must not
+invent a timestamp or cross a verified hard section boundary.
+
+The V0.6 phrase backend still publishes **legacy word-utterance**
+candidates and not continuous token-level timings. The verified mapping
+is only an experimental diagnostic for the following PR. Consult
+`diagnostics.attempts[].ctc_phrase.continuous_reference` to review the
+token count, optional diacritic fallback and minimum-frame capacity.
+
+### Optional real-model smoke test
+
+After installing `.[align,ctc]`, validate the actual Portuguese decoder
+using a human-transcribed **short, isolated** spoken or sung WAV:
+
+```bash
+python scripts/validate_mms.py --audio "speech-pt.wav" \
+  --expected "frase falada exatamente neste áudio" --device cpu
+```
+
+Repeat with a sung phrase. This performs unrestricted CTC decoding and
+reports the expected text, predicted text and sample-specific WER.
+It does not prove accurate word boundaries or good performance on
+full songs. It downloads the checkpoint on first use, and does not
+upload local audio. Never run this benchmark on an arbitrary track
+with unrelated expected text. A low WER on speech alone does not
+establish singing performance.

@@ -73,6 +73,27 @@ def plan_phrase_windows(words, lines, *, section_start, section_end,
             # the later resolver rejects candidates crossing known anchors.
             lo=max(section_start,left_anchor-min(1.,.12*len(indices)))
             hi=min(section_end,right_anchor+min(1.,.12*len(indices)))
+        if hi>lo:
+            # The legacy planner could offer 840 ms to seven completely
+            # unresolved words. Expand these crops as *search regions*,
+            # bounded by the section, rather than pretending a short crop
+            # acoustically contains the line.
+            desired=min(max_seconds,max(min_seconds,.36*len(indices)))
+            if hi-lo < desired:
+                slack=desired-(hi-lo)
+                lo=max(section_start,lo-slack/2)
+                hi=min(section_end,hi+slack/2)
+                if hi-lo < desired:
+                    remaining=desired-(hi-lo)
+                    lo=max(section_start,lo-remaining)
+                    remaining=desired-(hi-lo)
+                    hi=min(section_end,hi+remaining)
+            if hi-lo < desired-1e-4:
+                issues.append({"line_id":line["id"],
+                    "reason":"insufficient_section_context",
+                    "required_seconds":round(desired,3),
+                    "window":[round(lo,3),round(hi,3)]})
+                continue
         if hi<=lo or hi-lo>max_seconds:
             issues.append({"line_id":line["id"],"reason":"no_safe_phrase_window",
                            "window":[round(lo,3),round(hi,3)]})
