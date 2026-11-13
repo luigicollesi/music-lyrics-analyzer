@@ -4,10 +4,12 @@ from __future__ import annotations
 from .overlap_windows import anchored_line_windows
 from .phrase_conflicts import quarantine_conflicted_candidates
 from .candidate_resolver import resolve_candidates
+from .asr_line_search import propose_missing_line_locations
 
 
 def overlap_ctc_review(backend, audio16, words, lines, *, seconds=8.,
-                       hop=4., threshold=-2.5, max_records=10000):
+                       hop=4., threshold=-2.5, max_records=10000,
+                       asr_segments=None, asr_search=True):
     """Re-align only anchored whole lines on overlapping audio crops.
 
     This compares timing stability across crop borders. It does NOT discover
@@ -16,6 +18,12 @@ def overlap_ctc_review(backend, audio16, words, lines, *, seconds=8.,
     plans,skipped=anchored_line_windows(
         words,lines,start=0.,end=len(audio16)/16000,
         seconds=seconds,hop=hop)
+    asr_plans=[]
+    if asr_search and asr_segments:
+        asr_plans,asr_issues=propose_missing_line_locations(
+            words,lines,asr_segments,duration=len(audio16)/16000)
+        skipped.extend(asr_issues)
+    plans.extend(asr_plans)
     lookup={w["id"]:w for w in words}
     attempts=[{"status":"skipped",**issue} for issue in skipped]
     candidates=[]
@@ -26,7 +34,9 @@ def overlap_ctc_review(backend, audio16, words, lines, *, seconds=8.,
         entry={"window_id":plan["window_id"],"line_id":plan["line_id"],
                "section_id":plan["section_id"],
                "start":plan["start"],"end":plan["end"],
-               "anchor_count":plan["anchor_count"]}
+               "anchor_count":plan["anchor_count"],
+               "localization_source":plan.get("source","existing_word_anchors"),
+               "asr_score":plan.get("asr_score")}
         try:
             backend.align_continuous(audio16,selected,plan["start"],plan["end"],
                                      threshold=threshold)
@@ -40,6 +50,8 @@ def overlap_ctc_review(backend, audio16, words, lines, *, seconds=8.,
                     raise ValueError("CTC candidate record limit reached")
                 candidates.append({**record,"window_id":plan["window_id"],
                                    "line_id":plan["line_id"],
+                                   "localization_source":entry["localization_source"],
+                                   "asr_score":entry["asr_score"],
                                    "section_id":plan["section_id"]})
         except Exception as exc:
             entry["status"]="error"
@@ -68,6 +80,8 @@ def overlap_ctc_review(backend, audio16, words, lines, *, seconds=8.,
         "attempts":attempts,"candidates":candidates,
         "phrase_conflicts":conflicts,
         "stability":stability,
+        "asr_localization":{"proposed_windows":len(asr_plans),
+                            "skipped":len(skipped)},
         "resolver":{"accepted_count":resolution["accepted_count"],
                     "decisions":resolution["decisions"],
                     "candidate_decisions":resolution["candidate_decisions"]}}
